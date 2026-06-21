@@ -28,6 +28,7 @@ type VoiceState = "idle" | "listening" | "processing" | "error";
 type VoiceContext =
   | "input"
   | "add"
+  | "swap"
   | "servings"
   | "courses"
   | "diet"
@@ -49,6 +50,7 @@ interface State {
   dishes: Dish[];
   dishesLoading: boolean;
   replacingId: string | null;
+  swapTargetId: string | null;
   cookDish: number;
   cookStep: number;
   imgState: ImgState;
@@ -118,6 +120,7 @@ const INITIAL: State = {
   dishes: [],
   dishesLoading: false,
   replacingId: null,
+  swapTargetId: null,
   cookDish: 0,
   cookStep: 0,
   imgState: {},
@@ -181,6 +184,7 @@ export default function Scrappy() {
     ({
       input: "I'm listening",
       add: "Go on…",
+      swap: "What should change?",
       servings: "How many?",
       courses: "How many dishes?",
       diet: "Any preference?",
@@ -216,19 +220,36 @@ export default function Scrappy() {
   };
   const voiceCancel = () => {
     voiceRef.current?.cancel();
-    setState({ voiceOpen: false, voiceState: "idle" });
+    setState({ voiceOpen: false, voiceState: "idle", swapTargetId: null });
   };
   const voiceRetry = () => {
     if (stateRef.current.voiceContext) startVoice(stateRef.current.voiceContext);
   };
   const voiceType = () => {
     voiceRef.current?.cancel();
-    setState({ voiceOpen: false, voiceState: "idle" });
+    const ctx = stateRef.current.voiceContext;
+    const id = stateRef.current.swapTargetId;
+    setState({ voiceOpen: false, voiceState: "idle", swapTargetId: null });
+    if (ctx === "swap") {
+      if (id) {
+        const text = window.prompt("What should change about this dish?") ?? "";
+        swap(id, text.trim() || undefined);
+      }
+      return;
+    }
     typedInput();
   };
 
-  /* Turn a final transcript into ingredients (input/add) or a preference value. */
+  /* Turn a final transcript into ingredients (input/add), a swap preference, or
+     a preference value. */
   const resolveVoice = async (ctx: VoiceContext, transcript: string) => {
+    // Swap: an empty note just means "swap without a preference" — not an error.
+    if (ctx === "swap") {
+      const id = stateRef.current.swapTargetId;
+      setState({ voiceOpen: false, voiceState: "idle", swapTargetId: null });
+      if (id) swap(id, transcript.trim() || undefined);
+      return;
+    }
     if (!transcript.trim()) {
       setState({ voiceState: "error", voiceTitle: "Didn't catch that" });
       return;
@@ -333,7 +354,14 @@ export default function Scrappy() {
     }
   };
 
-  const swap = async (id: string) => {
+  /* Tapping Swap opens the voice sheet so the user can steer the alternative
+     ("make it spicier", "no tofu"); saying nothing just swaps. */
+  const startSwapVoice = (id: string) => {
+    setState({ swapTargetId: id });
+    startVoice("swap");
+  };
+
+  const swap = async (id: string, note?: string) => {
     const dish = stateRef.current.dishes.find((d) => d.id === id);
     if (!dish) return;
     setState({ replacingId: id });
@@ -344,6 +372,7 @@ export default function Scrappy() {
         swapDishId: id,
         keepRescue: dish.rescue,
         exclude: stateRef.current.dishes.map((d) => d.name),
+        note,
       });
       setState((s) => ({
         dishes: s.dishes.map((d) => (d.id === id ? alt : d)),
@@ -450,6 +479,7 @@ export default function Scrappy() {
       dishes: [],
       dishesLoading: false,
       replacingId: null,
+      swapTargetId: null,
       cookDish: 0,
       cookStep: 0,
       imgState: {},
@@ -1040,7 +1070,7 @@ export default function Scrappy() {
                         </p>
                       </div>
                       <button
-                        onClick={() => swap(d.id)}
+                        onClick={() => startSwapVoice(d.id)}
                         style={css(
                           "flex:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-family:var(--font-body);font-weight:600;font-size:12px;padding:7px 11px;border-radius:999px",
                         )}

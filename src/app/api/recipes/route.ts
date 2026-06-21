@@ -15,6 +15,8 @@ interface Body {
   keepRescue?: string[];
   /* Dish names to avoid repeating on a swap. */
   exclude?: string[];
+  /* Optional spoken ad-hoc preference for this swap (e.g. "make it spicier"). */
+  note?: string;
 }
 
 const DISH_SCHEMA = {
@@ -184,10 +186,15 @@ export async function POST(req: Request) {
   const isSwap = !!body.swapDishId;
   const count = isSwap ? 1 : Math.max(1, Math.min(5, body.prefs.courses || 3));
 
+  const note = body.note?.trim();
   const extra = isSwap
     ? `\n\nThis replaces a previous dish. Pick something different${
         body.exclude?.length ? ` from: ${body.exclude.join(", ")}` : ""
-      }, but it MUST still use up these expiring ingredients: ${(body.keepRescue ?? []).join(", ") || "the ones marked GOING BAD"}.`
+      }, but it MUST still use up these expiring ingredients: ${(body.keepRescue ?? []).join(", ") || "the ones marked GOING BAD"}.${
+        note
+          ? ` The user also asked: "${note}". Honour this preference as far as the hard ingredient constraint and the rescue requirement allow; if it conflicts (e.g. asks to drop an expiring ingredient), keep the rescue and adapt the rest.`
+          : ""
+      }`
     : "";
 
   try {

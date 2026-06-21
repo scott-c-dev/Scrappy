@@ -44,13 +44,15 @@ export function generateRecipes(input: {
   return postJSON("/api/recipes", input);
 }
 
-/* Swap a single dish while still rescuing the expiring ingredients. */
+/* Swap a single dish while still rescuing the expiring ingredients. `note` is an
+   optional spoken ad-hoc preference (e.g. "make it spicier", "no tofu"). */
 export function swapDish(input: {
   ingredients: Ingredient[];
   prefs: Prefs;
   swapDishId: string;
   keepRescue: string[];
   exclude: string[];
+  note?: string;
 }): Promise<{ dish: Dish }> {
   return postJSON("/api/recipes", input);
 }

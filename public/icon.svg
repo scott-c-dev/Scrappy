@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#5E8C3F"/>
+  <!-- a simple rescued-leaf mark -->
+  <path d="M150 360c0-110 80-200 212-208 0 132-92 208-212 208z" fill="#FCFBEF"/>
+  <path d="M168 348c70-78 122-120 176-150" stroke="#5E8C3F" stroke-width="16" stroke-linecap="round" fill="none"/>
+</svg>

@@ -1,21 +1,28 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import type { Dish, Ingredient, Prefs, Step } from "@/lib/types";
+import {
+  generateImage,
+  generateRecipes,
+  parseIngredients,
+  parsePref,
+  swapDish,
+} from "@/lib/api";
+import { startVoiceCapture, type VoiceSession } from "@/lib/voice";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Scrappy — cook what's about to go bad.
 
-   A faithful React/TypeScript recreation of the Scrappy interactive prototype.
-   The flow is near-linear: input → confirm → dishes → cook, with voice,
-   preference, and finish sheets layered over the phone frame. Anti-waste
-   ("use up what's going bad first") is the driver throughout, not a footnote.
-
-   Styling mirrors the prototype's CSS-variable theming (4 directions) and exact
-   pixel values; `css()` converts the prototype's inline style strings into the
-   React style objects this app renders with, so values stay 1:1.
+   The near-linear flow (input → confirm → dishes → cook, with voice,
+   preference, and finish sheets over the phone frame) is driven by real AI
+   behind the /api routes: Deepgram for voice, Claude for ingredient parsing +
+   recipe/constraint solving, and an image model for the step/finale shots.
+   Anti-waste ("use up what's going bad first") is the driver throughout, not a
+   footnote. `css()` turns the design's inline CSS strings into React style
+   objects so the original pixel values stay 1:1.
 ─────────────────────────────────────────────────────────────────────────── */
 
-type Theme = "clay" | "market" | "diner" | "garden";
 type Screen = "input" | "confirm" | "dishes" | "cook";
 type VoiceState = "idle" | "listening" | "processing" | "error";
 type VoiceContext =
@@ -27,181 +34,32 @@ type VoiceContext =
   | "allergy";
 type PrefKey = "servings" | "courses" | "diet" | "allergy";
 
-interface Ingredient {
-  id: string;
-  name: string;
-  qty: string;
-  tag: string | null;
-}
-interface Dish {
-  id: string;
-  name: string;
-  short: string;
-  blurb: string;
-  rescue: string[];
-  uses: string[];
-}
-type DishAlt = Omit<Dish, "id">;
-interface Prefs {
-  servings: number;
-  courses: number;
-  diet: string;
-  allergy: string;
-}
-interface Step {
-  text: string;
-  img: boolean;
-  cap?: string;
-}
+/* Ingredient, Dish, Step, Prefs now live in @/lib/types (shared with the
+   server routes). */
 type ImgState = Record<string, "loading" | "ready">;
 
 interface State {
-  theme: Theme;
   screen: Screen;
   voiceOpen: boolean;
   voiceContext: VoiceContext | null;
   voiceState: VoiceState;
-  voicePartial: string;
   voiceTitle: string;
-  inputVoiceFailed: boolean;
   ingredients: Ingredient[];
   prefs: Prefs;
-  addedGarlic: boolean;
   dishes: Dish[];
   dishesLoading: boolean;
   replacingId: string | null;
-  swapIdx: number;
   cookDish: number;
   cookStep: number;
   imgState: ImgState;
+  imgUrls: Record<string, string>;
+  finaleUrl: string | null;
+  finaleLoading: boolean;
   prefOpen: boolean;
   prefKey: PrefKey | null;
   finishOpen: boolean;
+  error: string | null;
 }
-
-/* ── Static content (ported from the prototype's class fields) ───────────── */
-
-const ING: Ingredient[] = [
-  { id: "tom", name: "Tomatoes", qty: "2", tag: "use soon" },
-  { id: "cab", name: "Cabbage", qty: "½", tag: "going bad" },
-  { id: "egg", name: "Eggs", qty: "3", tag: null },
-  { id: "tofu", name: "Tofu", qty: "1 block", tag: "going bad" },
-  { id: "sca", name: "Scallions", qty: "as needed", tag: null },
-  { id: "rice", name: "Leftover rice", qty: "1 bowl", tag: "use soon" },
-];
-
-const DISHES0: Dish[] = [
-  {
-    id: "d1",
-    name: "Cabbage & Tofu Braise",
-    short: "Braise",
-    blurb: "Silky tofu, sweet cabbage, a glossy little sauce.",
-    rescue: ["Cabbage", "Tofu"],
-    uses: ["Cabbage", "Tofu", "Scallions"],
-  },
-  {
-    id: "d2",
-    name: "Tomato & Egg Scramble",
-    short: "Tomato Egg",
-    blurb: "The three-minute classic. No notes.",
-    rescue: ["Tomatoes"],
-    uses: ["Tomatoes", "Eggs", "Scallions"],
-  },
-  {
-    id: "d3",
-    name: "Scallion Egg Fried Rice",
-    short: "Fried Rice",
-    blurb: "Yesterday’s rice, reporting for duty.",
-    rescue: ["Leftover rice"],
-    uses: ["Rice", "Eggs", "Scallions"],
-  },
-];
-
-const ALTS: DishAlt[] = [
-  {
-    name: "Charred Cabbage Wedges",
-    short: "Cabbage",
-    blurb: "Crispy edges, tender middle, salty finish.",
-    rescue: ["Cabbage"],
-    uses: ["Cabbage", "Scallions"],
-  },
-  {
-    name: "Tomato Tofu Stew",
-    short: "Stew",
-    blurb: "Brothy, comforting, ready in ten.",
-    rescue: ["Tomatoes", "Tofu"],
-    uses: ["Tomatoes", "Tofu", "Scallions"],
-  },
-  {
-    name: "Soy-Glazed Eggs",
-    short: "Soy Eggs",
-    blurb: "Jammy yolks under a sticky glaze.",
-    rescue: ["Eggs"],
-    uses: ["Eggs", "Scallions"],
-  },
-];
-
-const STEPS: Step[][] = [
-  [
-    {
-      text: "Tear the cabbage into rough, palm-sized pieces. Rougher than feels right.",
-      img: true,
-      cap: "reference · tearing cabbage",
-    },
-    {
-      text: "Cut the tofu into ~2 cm cubes and pat them dry, so they brown instead of steam.",
-      img: true,
-      cap: "reference · tofu cubes",
-    },
-    {
-      text: "Medium-high heat. A little oil, then the scallion whites until they smell good.",
-      img: false,
-    },
-    {
-      text: "Tofu in. Leave it alone 2–3 min to get one golden side before you stir.",
-      img: true,
-      cap: "reference · the golden side",
-    },
-    {
-      text: "Cabbage in, a pinch of salt, a splash of water. Lid on, 4 minutes.",
-      img: false,
-    },
-    {
-      text: "Lid off, toss, taste. Scallion greens over the top. That’s dinner.",
-      img: false,
-    },
-  ],
-  [
-    {
-      text: "Beat 3 eggs with a small pinch of salt until completely smooth.",
-      img: false,
-    },
-    {
-      text: "Hot pan, scramble the eggs soft and just-set, then slide them out.",
-      img: true,
-      cap: "reference · soft scramble",
-    },
-    {
-      text: "Tomato wedges in until juicy, eggs back, fold once, scallions. Done.",
-      img: false,
-    },
-  ],
-  [
-    {
-      text: "Break up the cold rice with wet hands so no clumps survive.",
-      img: true,
-      cap: "reference · loosened rice",
-    },
-    {
-      text: "Screaming-hot pan. Eggs first, then rice, then keep everything moving.",
-      img: false,
-    },
-    {
-      text: "Scallions, a little salt, toss until every grain looks shiny.",
-      img: false,
-    },
-  ],
-];
 
 const PREFOPTS: Record<PrefKey, (string | number)[]> = {
   servings: [1, 2, 3, 4, 5, 6],
@@ -250,27 +108,26 @@ function Mic({ size, sw }: { size: number; sw: number }) {
 }
 
 const INITIAL: State = {
-  theme: "garden",
   screen: "input",
   voiceOpen: false,
   voiceContext: null,
   voiceState: "idle",
-  voicePartial: "",
   voiceTitle: "",
-  inputVoiceFailed: false,
   ingredients: [],
   prefs: { servings: 2, courses: 3, diet: "No restrictions", allergy: "None" },
-  addedGarlic: false,
   dishes: [],
   dishesLoading: false,
   replacingId: null,
-  swapIdx: 0,
   cookDish: 0,
   cookStep: 0,
   imgState: {},
+  imgUrls: {},
+  finaleUrl: null,
+  finaleLoading: false,
   prefOpen: false,
   prefKey: null,
   finishOpen: false,
+  error: null,
 };
 
 export default function Scrappy() {
@@ -294,181 +151,207 @@ export default function Scrappy() {
     [],
   );
 
-  /* Timer buckets — general, voice, and cook-image, each independently
-     clearable just like the prototype. */
-  const timers = useRef<number[]>([]);
-  const vtimers = useRef<number[]>([]);
+  /* Cook-image stagger timers (§6) — start each generation a beat apart so the
+     later images are ready by the time the user reaches them. Cleared on
+     unmount / restart. */
   const ctimers = useRef<number[]>([]);
-  const t = (fn: () => void, ms: number) => {
-    const id = window.setTimeout(fn, ms);
-    timers.current.push(id);
-    return id;
-  };
-  const vt = (fn: () => void, ms: number) => {
-    const id = window.setTimeout(fn, ms);
-    vtimers.current.push(id);
-    return id;
-  };
   const ct = (fn: () => void, ms: number) => {
     const id = window.setTimeout(fn, ms);
     ctimers.current.push(id);
     return id;
   };
-  const clearV = () => {
-    vtimers.current.forEach(clearTimeout);
-    vtimers.current = [];
+  const clearCt = () => {
+    ctimers.current.forEach(clearTimeout);
+    ctimers.current = [];
   };
+
+  /* The active live-voice session, so it can be stopped/cancelled from anywhere. */
+  const voiceRef = useRef<VoiceSession | null>(null);
 
   useEffect(() => {
     return () => {
-      [...timers.current, ...vtimers.current, ...ctimers.current].forEach(
-        clearTimeout,
-      );
+      ctimers.current.forEach(clearTimeout);
+      voiceRef.current?.cancel();
     };
   }, []);
 
   /* ── Behaviour ─────────────────────────────────────────────────────── */
 
-  const voicePlan = (ctx: VoiceContext) => {
-    if (ctx === "input")
-      return {
-        title: "I'm listening",
-        partials: [
-          "",
-          "two tomatoes…",
-          "two tomatoes, half a cabbage, three eggs…",
-          "two tomatoes, half a cabbage, three eggs, a block of tofu, scallions and some leftover rice",
-        ],
-      };
-    if (ctx === "add")
-      return {
-        title: "Go on…",
-        partials: ["", "umm, and a…", "and a few cloves of garlic"],
-      };
-    if (ctx === "servings")
-      return { title: "How many?", partials: ["", "make it for four"] };
-    if (ctx === "courses")
-      return { title: "How many dishes?", partials: ["", "just two is plenty"] };
-    if (ctx === "diet")
-      return { title: "Any preference?", partials: ["", "keep it vegetarian"] };
-    if (ctx === "allergy")
-      return { title: "Anything to avoid?", partials: ["", "peanuts, please"] };
-    return { title: "Listening…", partials: ["", "…"] };
-  };
+  const voiceTitleFor = (ctx: VoiceContext): string =>
+    ({
+      input: "I'm listening",
+      add: "Go on…",
+      servings: "How many?",
+      courses: "How many dishes?",
+      diet: "Any preference?",
+      allergy: "Anything to avoid?",
+    })[ctx] ?? "Listening…";
 
-  const startVoice = (ctx: VoiceContext) => {
-    clearV();
-    const plan = voicePlan(ctx);
+  /* Open the voice sheet and record. The clip is transcribed on stop (proxied
+     through Deepgram server-side), then resolved below. */
+  const startVoice = async (ctx: VoiceContext) => {
+    voiceRef.current?.cancel();
     setState({
       voiceOpen: true,
       prefOpen: false,
       voiceContext: ctx,
       voiceState: "listening",
-      voicePartial: "",
-      voiceTitle: plan.title,
+      voiceTitle: voiceTitleFor(ctx),
+      error: null,
     });
-    plan.partials.forEach((p, i) =>
-      vt(() => setState({ voicePartial: p }), 300 + i * 650),
-    );
-    const end = 300 + plan.partials.length * 650 + 250;
-    vt(() => setState({ voiceState: "processing" }), end);
-    vt(() => resolveVoice(ctx), end + 950);
+    try {
+      voiceRef.current = await startVoiceCapture({
+        onFinal: (text) => resolveVoice(ctx, text),
+        onError: () =>
+          setState({ voiceState: "error", voiceTitle: "Hmm — one more time?" }),
+      });
+    } catch {
+      setState({ voiceState: "error", voiceTitle: "Microphone unavailable" });
+    }
   };
 
   const voiceDone = () => {
-    const ctx = stateRef.current.voiceContext;
-    clearV();
     setState({ voiceState: "processing" });
-    if (ctx) vt(() => resolveVoice(ctx), 800);
+    voiceRef.current?.stop(); // flushes Deepgram, then fires onFinal → resolveVoice
   };
   const voiceCancel = () => {
-    clearV();
+    voiceRef.current?.cancel();
     setState({ voiceOpen: false, voiceState: "idle" });
   };
   const voiceRetry = () => {
     if (stateRef.current.voiceContext) startVoice(stateRef.current.voiceContext);
   };
   const voiceType = () => {
-    clearV();
+    voiceRef.current?.cancel();
     setState({ voiceOpen: false, voiceState: "idle" });
     typedInput();
   };
 
-  const resolveVoice = (ctx: VoiceContext) => {
-    if (ctx === "input") {
-      if (!stateRef.current.inputVoiceFailed) {
-        setState({
-          voiceState: "error",
-          voiceTitle: "Hmm — one more time?",
-          voicePartial: "",
-          inputVoiceFailed: true,
-        });
+  /* Turn a final transcript into ingredients (input/add) or a preference value. */
+  const resolveVoice = async (ctx: VoiceContext, transcript: string) => {
+    if (!transcript.trim()) {
+      setState({ voiceState: "error", voiceTitle: "Didn't catch that" });
+      return;
+    }
+    setState({ voiceState: "processing" });
+    try {
+      if (ctx === "input" || ctx === "add") {
+        const { ingredients } = await parseIngredients({ transcript });
+        if (ctx === "add") {
+          setState((s) => ({
+            ingredients: [...s.ingredients, ...ingredients],
+            voiceOpen: false,
+            voiceState: "idle",
+          }));
+        } else {
+          setState({
+            ingredients,
+            screen: "confirm",
+            voiceOpen: false,
+            voiceState: "idle",
+          });
+        }
         return;
       }
-      setState({
-        ingredients: ING.map((x) => ({ ...x })),
-        screen: "confirm",
+      const { value } = await parsePref(ctx as PrefKey, transcript);
+      setState((s) => ({
+        prefs: { ...s.prefs, [ctx as PrefKey]: value },
         voiceOpen: false,
         voiceState: "idle",
-      });
-      return;
+        prefOpen: false,
+      }));
+    } catch {
+      setState({ voiceState: "error", voiceTitle: "Hmm — one more time?" });
     }
-    if (ctx === "add") {
-      if (!stateRef.current.addedGarlic) {
-        setState((s) => ({
-          ingredients: [
-            ...s.ingredients,
-            { id: "garlic", name: "Garlic", qty: "a few cloves", tag: null },
-          ],
-          addedGarlic: true,
-        }));
-      }
-      setState({ voiceOpen: false, voiceState: "idle" });
-      return;
-    }
-    const map: Record<PrefKey, string | number> = {
-      servings: 4,
-      courses: 2,
-      diet: "Vegetarian",
-      allergy: "Peanuts",
-    };
-    setState((s) => ({
-      prefs: { ...s.prefs, [ctx]: map[ctx as PrefKey] },
-      voiceOpen: false,
-      voiceState: "idle",
-      prefOpen: false,
-    }));
   };
 
-  const typedInput = () =>
-    setState({ ingredients: ING.map((x) => ({ ...x })), screen: "confirm" });
+  /* Shared ingredient ingest for the typed / photo paths. */
+  const ingestIngredients = async (input: {
+    transcript?: string;
+    imageBase64?: string;
+  }) => {
+    setState({ error: null });
+    try {
+      const { ingredients } = await parseIngredients(input);
+      setState({ ingredients, screen: "confirm" });
+    } catch {
+      setState({ error: "Couldn't read those ingredients — try again." });
+    }
+  };
+
+  const typedInput = () => {
+    const text = window.prompt(
+      "What's in your fridge? e.g. two tomatoes, half a cabbage, three eggs",
+    );
+    if (text && text.trim()) ingestIngredients({ transcript: text.trim() });
+  };
+
+  const onPhoto = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => ingestIngredients({ imageBase64: String(reader.result) });
+    reader.readAsDataURL(file);
+  };
+
   const removeIng = (id: string) =>
     setState((s) => ({ ingredients: s.ingredients.filter((i) => i.id !== id) }));
+  /* Tap a chip to correct its three-tier freshness: fresh → use soon → going bad. */
+  const cycleFreshness = (id: string) =>
+    setState((s) => ({
+      ingredients: s.ingredients.map((i) =>
+        i.id === id
+          ? {
+              ...i,
+              tag:
+                i.tag === null
+                  ? "use soon"
+                  : i.tag === "use soon"
+                    ? "going bad"
+                    : null,
+            }
+          : i,
+      ),
+    }));
   const openPref = (key: PrefKey) => setState({ prefOpen: true, prefKey: key });
   const pickPref = (key: PrefKey, val: string | number) =>
     setState((s) => ({ prefs: { ...s.prefs, [key]: val }, prefOpen: false }));
   const closePref = () => setState({ prefOpen: false });
 
-  const generate = () => {
-    setState({
-      screen: "dishes",
-      dishesLoading: true,
-      dishes: DISHES0.map((d) => ({ ...d })),
-    });
-    t(() => setState({ dishesLoading: false }), 2400);
+  const generate = async () => {
+    setState({ screen: "dishes", dishesLoading: true, dishes: [], error: null });
+    try {
+      const { dishes } = await generateRecipes({
+        ingredients: stateRef.current.ingredients,
+        prefs: stateRef.current.prefs,
+      });
+      setState({ dishes, dishesLoading: false });
+    } catch {
+      setState({
+        dishesLoading: false,
+        screen: "confirm",
+        error: "Couldn't build recipes — try again.",
+      });
+    }
   };
 
-  const swap = (id: string) => {
+  const swap = async (id: string) => {
+    const dish = stateRef.current.dishes.find((d) => d.id === id);
+    if (!dish) return;
     setState({ replacingId: id });
-    t(() => {
-      setState((s) => {
-        const alt = ALTS[s.swapIdx % ALTS.length];
-        const dishes = s.dishes.map((d) =>
-          d.id === id ? { ...alt, id: "alt-" + s.swapIdx } : d,
-        );
-        return { dishes, replacingId: null, swapIdx: s.swapIdx + 1 };
+    try {
+      const { dish: alt } = await swapDish({
+        ingredients: stateRef.current.ingredients,
+        prefs: stateRef.current.prefs,
+        swapDishId: id,
+        keepRescue: dish.rescue,
+        exclude: stateRef.current.dishes.map((d) => d.name),
       });
-    }, 1600);
+      setState((s) => ({
+        dishes: s.dishes.map((d) => (d.id === id ? alt : d)),
+        replacingId: null,
+      }));
+    } catch {
+      setState({ replacingId: null, error: "Couldn't find another dish." });
+    }
   };
 
   const startCook = () => {
@@ -476,8 +359,13 @@ export default function Scrappy() {
     genImages(0);
   };
 
+  /* Kick off real image generation for a dish's image-worthy steps, staggered
+     so they arrive roughly as the cook reaches them (§6). Each slot shows a
+     shimmer placeholder until its URL resolves; a failed generation degrades
+     gracefully to the caption card rather than blocking the step. */
   const genImages = (di: number) => {
-    const steps = STEPS[di] || [];
+    const dish = stateRef.current.dishes[di];
+    const steps = dish?.steps ?? [];
     const loads: ImgState = {};
     steps.forEach((s, si) => {
       if (s.img) {
@@ -489,16 +377,24 @@ export default function Scrappy() {
       setState((s) => ({ imgState: { ...s.imgState, ...loads } }));
     let delay = 1100;
     steps.forEach((s, si) => {
-      if (s.img) {
-        const k = di + "-" + si;
-        if (loads[k]) {
-          ct(
-            () => setState((st) => ({ imgState: { ...st.imgState, [k]: "ready" } })),
-            delay,
+      if (!s.img) return;
+      const k = di + "-" + si;
+      if (!loads[k]) return;
+      const prompt = `${dish?.name ?? ""}: ${s.cap || s.text}`;
+      ct(() => {
+        generateImage({ prompt, kind: "step" })
+          .then(({ url }) =>
+            setState((st) => ({
+              imgState: { ...st.imgState, [k]: "ready" },
+              imgUrls: { ...st.imgUrls, [k]: url },
+            })),
+          )
+          .catch(() =>
+            // No URL → render falls back to the caption card (never a broken img).
+            setState((st) => ({ imgState: { ...st.imgState, [k]: "ready" } })),
           );
-          delay += 1500;
-        }
-      }
+      }, delay);
+      delay += 1500;
     });
   };
 
@@ -507,12 +403,25 @@ export default function Scrappy() {
     genImages(i);
   };
 
+  const openFinish = () => {
+    setState({ finishOpen: true });
+    if (stateRef.current.finaleUrl || stateRef.current.finaleLoading) return;
+    const dish =
+      stateRef.current.dishes[stateRef.current.cookDish] ??
+      stateRef.current.dishes[0];
+    if (!dish) return;
+    setState({ finaleLoading: true });
+    generateImage({ prompt: `${dish.name} — ${dish.blurb}`, kind: "finale" })
+      .then(({ url }) => setState({ finaleUrl: url, finaleLoading: false }))
+      .catch(() => setState({ finaleLoading: false }));
+  };
+
   const nextStep = () => {
     const di = stateRef.current.cookDish;
-    const n = STEPS[di].length;
-    if (stateRef.current.cookStep >= n - 1) {
-      if (di < STEPS.length - 1) setCookDish(di + 1);
-      else setState({ finishOpen: true });
+    const steps = stateRef.current.dishes[di]?.steps ?? [];
+    if (stateRef.current.cookStep >= steps.length - 1) {
+      if (di < stateRef.current.dishes.length - 1) setCookDish(di + 1);
+      else openFinish();
     } else {
       setState((s) => ({ cookStep: s.cookStep + 1 }));
     }
@@ -527,31 +436,29 @@ export default function Scrappy() {
       dishes: "confirm",
       cook: "dishes",
     };
-    if (map[sc]) setState({ screen: map[sc]!, finishOpen: false });
+    if (map[sc]) setState({ screen: map[sc]!, finishOpen: false, error: null });
   };
 
   const restart = () => {
-    clearV();
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-    ctimers.current.forEach(clearTimeout);
-    ctimers.current = [];
+    voiceRef.current?.cancel();
+    clearCt();
     setState({
       screen: "input",
       voiceOpen: false,
       voiceState: "idle",
-      inputVoiceFailed: false,
       ingredients: [],
-      addedGarlic: false,
       dishes: [],
       dishesLoading: false,
       replacingId: null,
-      swapIdx: 0,
       cookDish: 0,
       cookStep: 0,
       imgState: {},
+      imgUrls: {},
+      finaleUrl: null,
+      finaleLoading: false,
       prefOpen: false,
       finishOpen: false,
+      error: null,
       prefs: { servings: 2, courses: 3, diet: "No restrictions", allergy: "None" },
     });
   };
@@ -642,11 +549,12 @@ export default function Scrappy() {
     "That’s " + rescueCount + " things saved from the bin today. Not bad.";
 
   const di = s.cookDish;
-  const stepsArr = STEPS[di] || [];
+  const stepsArr: Step[] = s.dishes[di]?.steps ?? [];
   const step = stepsArr[s.cookStep] || { text: "", img: false };
   const imgKey = di + "-" + s.cookStep;
   const imgSt = s.imgState[imgKey];
-  const tabsSource = s.dishes.length ? s.dishes : DISHES0;
+  const imgUrl = s.imgUrls[imgKey];
+  const tabsSource = s.dishes;
   const cookDishTabs = tabsSource.map((d, idx) => ({
     id: d.id,
     label: d.short || d.name,
@@ -664,7 +572,7 @@ export default function Scrappy() {
       "height:4px;border-radius:2px;flex:1;background:" +
       (idx <= s.cookStep ? "var(--accent)" : "var(--line)"),
   }));
-  const curDish = s.dishes[di] || DISHES0[di] || ({} as Dish);
+  const curDish = s.dishes[di] || ({} as Dish);
   const finishText = goingBad.length
     ? "You used up your " +
       goingBad.join(", ").toLowerCase() +
@@ -675,7 +583,7 @@ export default function Scrappy() {
   const nextLabel =
     s.cookStep < stepsArr.length - 1
       ? "Next step"
-      : di >= STEPS.length - 1
+      : di >= s.dishes.length - 1
         ? "I’m done"
         : "Next dish →";
 
@@ -720,7 +628,6 @@ export default function Scrappy() {
   return (
     <div
       className="scrappy-root"
-      data-theme={s.theme}
       style={css(
         "height:100dvh;background:var(--page);font-family:var(--font-body);color:var(--ink);display:flex;flex-direction:column;overflow:hidden",
       )}
@@ -838,6 +745,24 @@ export default function Scrappy() {
                     e.g. “two tomatoes, half a cabbage, three eggs”
                   </div>
                 </div>
+                <label
+                  style={css(
+                    "cursor:pointer;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:var(--font-body);font-weight:600;font-size:13px;padding:9px 15px;border-radius:999px",
+                  )}
+                >
+                  📷 Snap a fridge photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) onPhoto(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
                 <button
                   onClick={typedInput}
                   style={css(
@@ -886,8 +811,10 @@ export default function Scrappy() {
                   {ingredients.map((ing) => (
                     <div key={ing.id} style={css(ing.chipStyle)}>
                       <div
+                        onClick={() => cycleFreshness(ing.id)}
+                        title="Tap to change freshness"
                         style={css(
-                          "display:flex;flex-direction:column;gap:2px;min-width:0",
+                          "cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0",
                         )}
                       >
                         <span
@@ -903,10 +830,18 @@ export default function Scrappy() {
                           <span style={css("font-size:12px;color:var(--muted)")}>
                             {ing.qty}
                           </span>
-                          {ing.tag && (
+                          {ing.tag ? (
                             <span style={css(ing.tagStyle)}>
                               <span style={css(ing.dotStyle)} />
                               {ing.tag}
+                            </span>
+                          ) : (
+                            <span
+                              style={css(
+                                "font-family:var(--font-label);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:var(--muted);opacity:.7",
+                              )}
+                            >
+                              fresh
                             </span>
                           )}
                         </span>
@@ -1289,9 +1224,23 @@ export default function Scrappy() {
                         "width:100%;height:184px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent-soft),var(--rescue-bg));position:relative;overflow:hidden;display:flex;align-items:flex-end;padding:12px",
                       )}
                     >
+                      {imgUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={imgUrl}
+                          alt={step.cap || "reference shot"}
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                          }}
+                        />
+                      )}
                       <span
                         style={css(
-                          "font-family:var(--font-label);font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:700;color:var(--ink);background:rgba(255,255,255,.78);padding:5px 9px;border-radius:8px",
+                          "position:relative;font-family:var(--font-label);font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:700;color:var(--ink);background:rgba(255,255,255,.78);padding:5px 9px;border-radius:8px",
                         )}
                       >
                         {step.cap || "reference shot"}
@@ -1398,15 +1347,6 @@ export default function Scrappy() {
                   >
                     Got it — sorting that out…
                   </span>
-                </div>
-              )}
-              {!!s.voicePartial && (
-                <div
-                  style={css(
-                    "background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);padding:13px 15px;width:100%;text-align:center;font-size:15px;color:var(--ink);line-height:1.4",
-                  )}
-                >
-                  “{s.voicePartial}”
                 </div>
               )}
               {s.voiceState === "listening" && (
@@ -1582,6 +1522,28 @@ export default function Scrappy() {
               >
                 Dinner&apos;s handled.
               </h2>
+              {(s.finaleLoading || s.finaleUrl) && (
+                <div
+                  style={css(
+                    "position:relative;width:100%;height:190px;border-radius:var(--radius-sm);overflow:hidden;background:var(--accent-soft);display:flex;align-items:center;justify-content:center",
+                  )}
+                >
+                  {s.finaleUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={s.finaleUrl}
+                      alt="The finished dish"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <div
+                      style={css(
+                        "width:30px;height:30px;border-radius:50%;border:3px solid rgba(255,255,255,.65);border-top-color:var(--accent);animation:spin .8s linear infinite",
+                      )}
+                    />
+                  )}
+                </div>
+              )}
               <div
                 style={css(
                   "display:flex;gap:11px;align-items:flex-start;background:var(--rescue-bg);border-radius:var(--radius-sm);padding:14px 15px;width:100%",
@@ -1619,6 +1581,19 @@ export default function Scrappy() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── Error toast ── */}
+        {s.error && (
+          <div
+            onClick={() => setState({ error: null })}
+            style={css(
+              "position:absolute;left:14px;right:14px;bottom:18px;z-index:50;cursor:pointer;display:flex;align-items:center;gap:10px;background:var(--ink);color:var(--paper);font-family:var(--font-body);font-weight:600;font-size:13.5px;padding:13px 15px;border-radius:var(--radius-sm);box-shadow:0 10px 30px rgba(0,0,0,.25)",
+            )}
+          >
+            <span style={css("flex:1")}>{s.error}</span>
+            <span style={css("opacity:.7;font-size:12px")}>tap to dismiss</span>
           </div>
         )}
       </div>

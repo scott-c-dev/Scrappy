@@ -37,6 +37,7 @@ const DISH_SCHEMA = {
           text: { type: "string" },
           needsImage: { type: "boolean" },
           cap: { type: "string" },
+          imagePrompt: { type: "string" },
         },
         required: ["text", "needsImage"],
       },
@@ -58,7 +59,12 @@ interface RawDish {
   blurb: string;
   rescue: string[];
   uses: string[];
-  steps: { text: string; needsImage: boolean; cap?: string }[];
+  steps: {
+    text: string;
+    needsImage: boolean;
+    cap?: string;
+    imagePrompt?: string;
+  }[];
 }
 
 function ingredientLines(ings: Ingredient[]): string {
@@ -93,7 +99,9 @@ Per dish provide:
 - blurb: one warm sentence (no emoji).
 - uses: the user-list/whitelist ingredients the dish draws on (title-case names).
 - rescue: the expiring ingredients it uses up.
-- steps: ordered cooking steps. Set needsImage=true ONLY for steps where a visual is genuinely indispensable (knife technique, a doneness/heat state); everything else needsImage=false. For an image step, add a short "cap" caption like "reference · the golden side". Keep steps concise and practical.
+- steps: ordered cooking steps. Set needsImage=true ONLY for steps where a visual is genuinely indispensable (knife technique, a doneness/heat state); everything else needsImage=false. Keep steps concise and practical. For each needsImage step, ALSO provide:
+  - cap: a short caption like "reference · the golden side".
+  - imagePrompt: a concrete, one-sentence VISUAL description of the ACTION this step performs — the technique in progress: what the hands / knife / pan are doing and what the ingredient looks like AT THIS MOMENT (raw, half-cooked, browning, etc.). Example: for "Dice the bacon", write "a chef's knife dicing raw bacon strips into small even cubes on a wooden cutting board, hands guiding the blade". Describe the in-progress action ONLY — never the finished or plated dish, no dish name, no final result, no serving plate.
 
 Honour preferences: cook for ${prefs.servings} ${prefs.servings === 1 ? "person" : "people"}; diet: ${prefs.diet}; allergies to avoid: ${prefs.allergy}.`;
 }
@@ -159,6 +167,7 @@ function toDish(raw: RawDish, idx: number): Dish {
     text: s.text,
     img: !!s.needsImage,
     cap: s.cap,
+    imagePrompt: s.imagePrompt,
   }));
   return {
     id: `dish-${idx}-${raw.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,

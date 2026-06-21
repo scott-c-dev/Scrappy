@@ -409,7 +409,10 @@ export default function Scrappy() {
       if (!s.img) return;
       const k = di + "-" + si;
       if (!loads[k]) return;
-      const prompt = `${dish?.name ?? ""}: ${s.cap || s.text}`;
+      // Depict the step's ACTION (technique in progress), not the final dish:
+      // prefer the model's per-step imagePrompt, fall back to the step text.
+      // Deliberately omit the dish name, which biases toward a plated shot.
+      const prompt = s.imagePrompt?.trim() || s.text;
       ct(() => {
         generateImage({ prompt, kind: "step" })
           .then(({ url }) =>

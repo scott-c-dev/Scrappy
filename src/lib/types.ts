@@ -18,6 +18,11 @@ export interface Step {
      (PRD §6). Plain-text steps get no image. */
   img: boolean;
   cap?: string;
+  /* A concrete visual description of the ACTION this step performs (the
+     technique in progress — hands/knife/pan mid-action, ingredient as it looks
+     right now), NOT the finished plated dish. Drives step image generation so
+     the picture matches the instruction (e.g. dicing bacon, not bacon pasta). */
+  imagePrompt?: string;
 }
 
 export interface Dish {

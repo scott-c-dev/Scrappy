@@ -10,9 +10,17 @@ export const maxDuration = 120;
    src/lib/server/midjourney.ts). */
 
 const STYLE: Record<"step" | "finale", string> = {
-  step: "instructional close-up cooking reference photo, overhead, warm natural kitchen light, clean and clear, appetising, shallow depth of field",
+  // Step shots must show the technique mid-action (the verb of the step), not
+  // the finished plate — see NEGATIVE below for the matching exclusions.
+  step: "a cooking technique caught mid-action: hands and utensils performing this exact step, ingredients in their in-progress state on a cutting board or in the pan, overhead close-up, warm natural kitchen light, clear and instructional, documentary process photo",
   finale:
     "beautifully plated finished home-cooked dish, warm natural light, overhead food photography, cosy, appetising, rich detail",
+};
+
+// Midjourney negative prompt (`--no`) per kind — keep step images on the
+// action and away from a finished/plated result.
+const NEGATIVE: Partial<Record<"step" | "finale", string>> = {
+  step: "plated finished dish, full plated meal, restaurant plating, garnish styling, serving plate, text, watermark",
 };
 
 // Midjourney aspect ratios per image kind.
@@ -36,7 +44,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    const url = await generateImage(`${prompt}. ${STYLE[kind]}`, ASPECT[kind]);
+    const styled = `${prompt}. ${STYLE[kind]}`;
+    const full = NEGATIVE[kind] ? `${styled} --no ${NEGATIVE[kind]}` : styled;
+    const url = await generateImage(full, ASPECT[kind]);
     return NextResponse.json({ url });
   } catch (err) {
     console.error("[/api/images]", err);

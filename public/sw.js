@@ -1,7 +1,7 @@
 /* Minimal service worker for installability (PRD §5). Network-first for
    navigations with an offline app-shell cache fallback; API calls are never
    cached (they need live keys/responses). */
-const CACHE = "scrappy-v1";
+const CACHE = "scrappy-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (e) => {

@@ -3,6 +3,9 @@
 # design-doc
 handoff_import
 
+# persisted MCP OAuth tokens (Midjourney)
+.mcp-auth
+
 # dependencies
 /node_modules
 /.pnp
@@ -35,6 +38,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel

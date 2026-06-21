@@ -1,20 +1,13 @@
 import { NextResponse } from "next/server";
+import { generateImage } from "@/lib/server/midjourney";
 
 export const runtime = "nodejs";
+// Midjourney jobs are slow (async generation + polling); allow a long request.
+export const maxDuration = 120;
 
-/* Image generation behind the teammate's `{ step_id: image_url }` contract
-   (PRD §9). The provider is isolated in `generate()` below so it can be swapped
-   (fal.ai / Replicate / Midjourney-for-finale) without touching the client.
-
-   Default provider: fal.ai FLUX schnell — a fast hosted model, the right fit
-   for the §6 staggered-generation strategy (never call a slow model live). */
-
-const FAL_MODEL: Record<"step" | "finale", string> = {
-  // schnell = fast (~1-2s), good enough for in-flow step shots.
-  step: "fal-ai/flux/schnell",
-  // dev = higher fidelity for the grand-finale plated dish.
-  finale: "fal-ai/flux/dev",
-};
+/* Image generation behind the `{ prompt, kind } -> { url }` contract the client
+   already consumes (PRD §9). Provider: Midjourney via its MCP server (see
+   src/lib/server/midjourney.ts). */
 
 const STYLE: Record<"step" | "finale", string> = {
   step: "instructional close-up cooking reference photo, overhead, warm natural kitchen light, clean and clear, appetising, shallow depth of field",
@@ -22,39 +15,11 @@ const STYLE: Record<"step" | "finale", string> = {
     "beautifully plated finished home-cooked dish, warm natural light, overhead food photography, cosy, appetising, rich detail",
 };
 
-const SIZE: Record<"step" | "finale", string> = {
-  step: "landscape_4_3",
-  finale: "square_hd",
+// Midjourney aspect ratios per image kind.
+const ASPECT: Record<"step" | "finale", string> = {
+  step: "4:3",
+  finale: "1:1",
 };
-
-async function generate(prompt: string, kind: "step" | "finale"): Promise<string> {
-  const key = process.env.IMAGE_API_KEY;
-  if (!key) throw new Error("IMAGE_API_KEY is not set");
-
-  const fullPrompt = `${prompt}. ${STYLE[kind]}`;
-  const res = await fetch(`https://fal.run/${FAL_MODEL[kind]}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Key ${key}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      prompt: fullPrompt,
-      image_size: SIZE[kind],
-      num_images: 1,
-      enable_safety_checker: true,
-    }),
-  });
-
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`image provider ${res.status}: ${detail}`);
-  }
-  const data = (await res.json()) as { images?: { url: string }[] };
-  const url = data.images?.[0]?.url;
-  if (!url) throw new Error("image provider returned no url");
-  return url;
-}
 
 export async function POST(req: Request) {
   let body: { prompt?: string; kind?: "step" | "finale" };
@@ -71,7 +36,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const url = await generate(prompt, kind);
+    const url = await generateImage(`${prompt}. ${STYLE[kind]}`, ASPECT[kind]);
     return NextResponse.json({ url });
   } catch (err) {
     console.error("[/api/images]", err);

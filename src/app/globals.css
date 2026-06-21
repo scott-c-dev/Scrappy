@@ -1,26 +1,49 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+
+/* ── Scrappy theme tokens ─────────────────────────────────────────────
+   Four visual "directions". Base is Clay; the others override a subset
+   of tokens and inherit the rest. Ported 1:1 from the design prototype. */
+.scrappy-root{
+  --page:#E7E1D5; --paper:#FBF3E7; --card:#FFFDF8; --ink:#2C241D; --ink-soft:#5A4E42;
+  --muted:#93836F; --line:#EBDFCD; --accent:#CE6536; --accent-ink:#FFFFFF; --accent-soft:#F5DCCB;
+  --rescue:#C07A1B; --rescue-bg:#FBEBCB; --fresh:#6E8E5A; --fresh-bg:#E6EDD9;
+  --radius:22px; --radius-sm:14px;
+  --shadow:0 18px 40px -20px rgba(70,45,25,.30); --shadow-sm:0 6px 18px -10px rgba(70,45,25,.30);
+  --font-display:'Bricolage Grotesque',sans-serif; --font-body:'Hanken Grotesk',sans-serif;
+  --font-label:'Hanken Grotesk',sans-serif; --label-tracking:.05em; --label-transform:uppercase;
+}
+.scrappy-root[data-theme="market"]{
+  --page:#E6DECF; --paper:#FAF4EA; --card:#FFFFFF; --ink:#241D17; --ink-soft:#564A3D; --muted:#8C7E6E;
+  --line:#EADFCB; --accent:#BE3A26; --accent-soft:#F1D6C9; --rescue:#B36F18; --rescue-bg:#F6E3C4;
+  --fresh:#4F7A50; --fresh-bg:#E1EAD9; --radius:12px; --radius-sm:8px;
+  --shadow:0 16px 34px -22px rgba(60,40,20,.30); --shadow-sm:0 5px 14px -10px rgba(60,40,20,.28);
+  --font-display:'Instrument Serif',serif; --font-label:'Hanken Grotesk',sans-serif; --label-tracking:.10em;
+}
+.scrappy-root[data-theme="diner"]{
+  --page:#E8DEC9; --paper:#F6EDDA; --card:#FFFCF4; --ink:#29211A; --ink-soft:#5B4C3A; --muted:#93826B;
+  --line:#ECE0C8; --accent:#D9831F; --accent-soft:#F7E0B8; --rescue:#B36410; --rescue-bg:#FBEAC4;
+  --fresh:#6F8A4E; --fresh-bg:#E8EDD6; --radius:16px; --radius-sm:10px;
+  --shadow:0 16px 36px -20px rgba(60,40,20,.32); --shadow-sm:0 6px 16px -10px rgba(60,40,20,.30);
+  --font-display:'Bricolage Grotesque',sans-serif; --font-label:'Space Mono',monospace; --label-tracking:.02em;
+}
+.scrappy-root[data-theme="garden"]{
+  --page:#DDE3CF; --paper:#F2F3E4; --card:#FCFBEF; --ink:#28311E; --ink-soft:#505A3F; --muted:#8A9172;
+  --line:#E2E6D1; --accent:#5E8C3F; --accent-ink:#FFFFFF; --accent-soft:#DCE7C5; --rescue:#C0791B;
+  --rescue-bg:#F5EBC8; --fresh:#3F7A46; --fresh-bg:#E0EBCC; --radius:22px; --radius-sm:14px;
+  --shadow:0 18px 40px -20px rgba(40,55,25,.30); --shadow-sm:0 6px 18px -10px rgba(40,55,25,.30);
+  --font-display:'Bricolage Grotesque',sans-serif; --font-body:'Hanken Grotesk',sans-serif;
+  --font-label:'Hanken Grotesk',sans-serif; --label-tracking:.05em; --label-transform:uppercase;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@keyframes wave{0%,100%{height:10px}50%{height:30px}}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 30%,transparent)}70%{box-shadow:0 0 0 20px transparent}100%{box-shadow:0 0 0 0 transparent}}
+@keyframes shimmer{0%{transform:translateX(-130%)}100%{transform:translateX(230%)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes risein{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes sheetin{from{transform:translateY(100%)}to{transform:none}}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+.noscroll::-webkit-scrollbar{display:none}
+.noscroll{scrollbar-width:none}

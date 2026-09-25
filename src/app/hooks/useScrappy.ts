@@ -244,7 +244,7 @@ export function useScrappy() {
 
   const voiceDone = () => {
     setState({ voiceState: "processing" });
-    voiceRef.current?.stop(); // flushes Deepgram, then fires onFinal → resolveVoice
+    voiceRef.current?.stop(); // flushes the recognizer, then fires onFinal → resolveVoice
   };
 
   const voiceCancel = () => {

@@ -36,33 +36,14 @@ export async function startVoiceCapture(h: Handlers): Promise<VoiceSession> {
 
 // ── Web Speech API ──────────────────────────────────────────────────────────
 
-/* Minimal typings — lib.dom doesn't ship SpeechRecognition. */
-interface SpeechRecognitionResultLike {
-  isFinal: boolean;
-  0: { transcript: string };
-}
-interface SpeechRecognitionEventLike {
-  resultIndex: number;
-  results: ArrayLike<SpeechRecognitionResultLike>;
-}
-interface SpeechRecognitionLike {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((e: { error: string }) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+type SpeechRecognitionCtor = new () => SpeechRecognition;
 
 function getSpeechRecognition(): SpeechRecognitionCtor | null {
-  const w = window as unknown as {
-    SpeechRecognition?: SpeechRecognitionCtor;
-    webkitSpeechRecognition?: SpeechRecognitionCtor;
-  };
+  // @types/dom-speech-recognition declares both globals as always present,
+  // but either (or both) may be missing at runtime.
+  const w = window as Partial<
+    Pick<typeof window, "SpeechRecognition" | "webkitSpeechRecognition">
+  >;
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 

@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   // other devices on the LAN. Without this, Next 16 blocks cross-origin dev
   // resources, so the page renders but never hydrates (buttons do nothing).
   // Set DEV_LAN_ORIGIN in .env.local to your machine's LAN IP.
-  allowedDevOrigins: [process.env.DEV_LAN_ORIGIN, "*.local"].filter(
+  allowedDevOrigins: [process.env.DEV_LAN_ORIGIN, "*.local", "*.trycloudflare.com"].filter(
     (o): o is string => !!o,
   ),
 };

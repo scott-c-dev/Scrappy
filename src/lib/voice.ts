@@ -10,6 +10,7 @@
    token, which the provided key isn't permissioned to mint. */
 
 import { transcribe } from "./api";
+import { voiceDebug } from "./voiceDebug";
 
 /* Deepgram fallback is switched off for now: browsers without the Web Speech
    API get a mic error instead of the server round trip. Flip to re-enable. */
@@ -56,27 +57,30 @@ function startWebSpeech(
   rec.continuous = true;
   rec.interimResults = true;
 
-  let finalText = "";
-  let interimText = "";
+  // Text from earlier runs of `rec` (we restart it after browser-initiated ends).
+  let committed = "";
+  // Text of the current run, rebuilt from its full results list on each event.
+  let current = "";
   let stopped = false;
   let cancelled = false;
   let failed = false;
 
   rec.onresult = (e) => {
-    interimText = "";
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const r = e.results[i];
-      if (r.isFinal) finalText += r[0].transcript;
-      else interimText += r[0].transcript;
-    }
-    // TODO: remove before end of day — debug logging of recognition results.
-    console.log("[voice] final:", finalText, "| interim:", interimText);
+    current = mergeResults(e.results);
+    // TODO: temporary — remove with voiceDebug.ts.
+    const raw = Array.from(e.results, (r, i) =>
+      `${i}${r.isFinal ? "F" : "i"}: ${r[0].transcript}`,
+    ).join("\n");
+    voiceDebug(
+      `[listening] committed: ${committed}\ncurrent: ${current}\n--- raw (idx ${e.resultIndex}) ---\n${raw}`,
+    );
   };
 
   rec.onerror = (e) => {
     // "no-speech" just means silence; let onend resolve with an empty transcript.
     if (e.error === "no-speech" || e.error === "aborted") return;
     failed = true;
+    voiceDebug(`[error] ${e.error}`, true);
     if (!cancelled) h.onError(new Error(`speech recognition: ${e.error}`));
   };
 
@@ -85,10 +89,14 @@ function startWebSpeech(
     // Browsers end continuous sessions on their own after a pause; keep
     // listening until the user taps Done.
     if (!stopped) {
+      committed = joinText(committed, current);
+      current = "";
+      voiceDebug(`[restart] committed: ${committed}`);
       rec.start();
       return;
     }
-    h.onFinal(`${finalText} ${interimText}`.trim());
+    voiceDebug(`[final] ${joinText(committed, current) || "(empty)"}`);
+    h.onFinal(joinText(committed, current));
   };
 
   rec.start();
@@ -104,6 +112,33 @@ function startWebSpeech(
       rec.abort();
     },
   };
+}
+
+/* Flatten a run's results (final and interim, in order) into one string.
+
+   Chrome on Android doesn't emit one result per phrase: it emits a growing
+   series — "is", "is it", "is it working" — each marked final, so naively
+   concatenating repeats every prefix. When a result starts with the one before
+   it, it supersedes it instead of being appended. Other browsers never produce
+   such prefixes, so this is a no-op there. Rebuilding from the full list (not
+   from resultIndex) also makes re-delivered results harmless. */
+function mergeResults(results: SpeechRecognitionResultList): string {
+  const segments: string[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const text = results[i][0].transcript.trim();
+    if (!text) continue;
+    const prev = segments[segments.length - 1];
+    if (prev !== undefined && text.toLowerCase().startsWith(prev.toLowerCase())) {
+      segments[segments.length - 1] = text;
+    } else {
+      segments.push(text);
+    }
+  }
+  return segments.join(" ");
+}
+
+function joinText(a: string, b: string): string {
+  return `${a} ${b}`.trim();
 }
 
 // ── Deepgram fallback ───────────────────────────────────────────────────────

@@ -10,7 +10,6 @@
    token, which the provided key isn't permissioned to mint. */
 
 import { transcribe } from "./api";
-import { voiceDebug } from "./voiceDebug";
 
 /* Deepgram fallback is switched off for now: browsers without the Web Speech
    API get a mic error instead of the server round trip. Flip to re-enable. */
@@ -67,20 +66,12 @@ function startWebSpeech(
 
   rec.onresult = (e) => {
     current = mergeResults(e.results);
-    // TODO: temporary — remove with voiceDebug.ts.
-    const raw = Array.from(e.results, (r, i) =>
-      `${i}${r.isFinal ? "F" : "i"}: ${r[0].transcript}`,
-    ).join("\n");
-    voiceDebug(
-      `[listening] committed: ${committed}\ncurrent: ${current}\n--- raw (idx ${e.resultIndex}) ---\n${raw}`,
-    );
   };
 
   rec.onerror = (e) => {
     // "no-speech" just means silence; let onend resolve with an empty transcript.
     if (e.error === "no-speech" || e.error === "aborted") return;
     failed = true;
-    voiceDebug(`[error] ${e.error}`, true);
     if (!cancelled) h.onError(new Error(`speech recognition: ${e.error}`));
   };
 
@@ -91,11 +82,9 @@ function startWebSpeech(
     if (!stopped) {
       committed = joinText(committed, current);
       current = "";
-      voiceDebug(`[restart] committed: ${committed}`);
       rec.start();
       return;
     }
-    voiceDebug(`[final] ${joinText(committed, current) || "(empty)"}`);
     h.onFinal(joinText(committed, current));
   };
 

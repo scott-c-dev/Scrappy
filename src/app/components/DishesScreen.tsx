@@ -1,6 +1,6 @@
 import { css } from "@/lib/css";
 import type { Dish } from "@/lib/types";
-import { Mic } from "./Mic";
+import { SwapIcon } from "./SwapSheet";
 
 interface DishesScreenProps {
   loading: boolean;
@@ -127,7 +127,7 @@ export function DishesScreen({
                   "flex:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-family:var(--font-body);font-weight:600;font-size:12px;padding:7px 11px;border-radius:999px",
                 )}
               >
-                <Mic size={12} sw={2.4} />
+                <SwapIcon size={12} />
                 Swap
               </button>
             </div>

@@ -22,16 +22,35 @@ export interface VoiceSession {
   cancel(): void;
 }
 
-interface Handlers {
-  onFinal: (text: string) => void;
-  onError: (err: Error) => void;
+/* Why capture failed, in the terms the UI explains to the user: the mic is
+   blocked or missing, there's no connection, or we just didn't get words. */
+export type CaptureFailure = "permission" | "offline" | "noisy";
+
+export class VoiceCaptureError extends Error {
+  constructor(
+    readonly kind: CaptureFailure,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
+interface Handlers {
+  /* The transcript so far, while the user is still talking. */
+  onPartial?: (text: string) => void;
+  onFinal: (text: string) => void;
+  onError: (err: VoiceCaptureError) => void;
+}
+
+/* Throws a VoiceCaptureError if capture can't start at all. */
 export async function startVoiceCapture(h: Handlers): Promise<VoiceSession> {
   const Recognition = getSpeechRecognition();
   if (Recognition) return startWebSpeech(Recognition, h);
   if (DEEPGRAM_FALLBACK_ENABLED) return startDeepgram(h);
-  throw new Error("speech recognition is not supported in this browser");
+  throw new VoiceCaptureError(
+    "permission",
+    "speech recognition is not supported in this browser",
+  );
 }
 
 // ── Web Speech API ──────────────────────────────────────────────────────────
@@ -66,13 +85,17 @@ function startWebSpeech(
 
   rec.onresult = (e) => {
     current = mergeResults(e.results);
+    h.onPartial?.(joinText(committed, current));
   };
 
   rec.onerror = (e) => {
     // "no-speech" just means silence; let onend resolve with an empty transcript.
     if (e.error === "no-speech" || e.error === "aborted") return;
     failed = true;
-    if (!cancelled) h.onError(new Error(`speech recognition: ${e.error}`));
+    if (!cancelled)
+      h.onError(
+        new VoiceCaptureError(failureFor(e.error), `speech recognition: ${e.error}`),
+      );
   };
 
   rec.onend = () => {
@@ -126,6 +149,18 @@ function mergeResults(results: SpeechRecognitionResultList): string {
   return segments.join(" ");
 }
 
+function failureFor(error: SpeechRecognitionErrorCode): CaptureFailure {
+  if (
+    error === "not-allowed" ||
+    error === "service-not-allowed" ||
+    error === "audio-capture"
+  )
+    return "permission";
+  // Chrome's recognizer runs server-side, so losing the connection surfaces here.
+  if (error === "network") return "offline";
+  return "noisy";
+}
+
 function joinText(a: string, b: string): string {
   return `${a} ${b}`.trim();
 }
@@ -133,7 +168,15 @@ function joinText(a: string, b: string): string {
 // ── Deepgram fallback ───────────────────────────────────────────────────────
 
 async function startDeepgram(h: Handlers): Promise<VoiceSession> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    throw new VoiceCaptureError(
+      "permission",
+      err instanceof Error ? err.message : "microphone unavailable",
+    );
+  }
   const mimeType = MediaRecorder.isTypeSupported("audio/webm")
     ? "audio/webm"
     : "";
@@ -156,7 +199,12 @@ async function startDeepgram(h: Handlers): Promise<VoiceSession> {
       const { transcript } = await transcribe(blob);
       h.onFinal(transcript);
     } catch (err) {
-      h.onError(err instanceof Error ? err : new Error("transcription failed"));
+      h.onError(
+        new VoiceCaptureError(
+          navigator.onLine ? "noisy" : "offline",
+          err instanceof Error ? err.message : "transcription failed",
+        ),
+      );
     }
   };
 

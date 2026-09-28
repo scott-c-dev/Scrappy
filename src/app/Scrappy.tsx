@@ -10,6 +10,8 @@ import { VoiceSheet } from "./components/VoiceSheet";
 import { PrefSheet } from "./components/PrefSheet";
 import { FinishSheet } from "./components/FinishSheet";
 import { ErrorToast } from "./components/ErrorToast";
+import { SwapSheet } from "./components/SwapSheet";
+import { voiceErrorView } from "./voiceErrors";
 
 export default function Scrappy() {
   const {
@@ -17,8 +19,10 @@ export default function Scrappy() {
     startVoice,
     voiceDone,
     voiceCancel,
-    voiceRetry,
-    voiceType,
+    voiceErrorAction,
+    reviewChange,
+    reviewEdit,
+    reviewSend,
     onPhoto,
     typedInput,
     removeIng,
@@ -27,7 +31,11 @@ export default function Scrappy() {
     pickPref,
     closePref,
     generate,
-    startSwapVoice,
+    openSwap,
+    closeSwap,
+    swapNow,
+    swapByVoice,
+    swapByText,
     startCook,
     setCookDish,
     nextStep,
@@ -50,6 +58,11 @@ export default function Scrappy() {
 
   const progressStep = { input: 0, confirm: 1, dishes: 2, cook: 3 }[s.screen];
   const showBack = s.screen !== "input";
+  const voiceError =
+    s.voiceError && s.voiceContext
+      ? voiceErrorView(s.voiceError, s.voiceContext, s.errorKeptText, s.backOnline)
+      : null;
+  const swapSheetDish = s.dishes.find((d) => d.id === s.swapSheetId);
 
   return (
     <div
@@ -121,6 +134,7 @@ export default function Scrappy() {
             <ConfirmScreen
               ingredients={s.ingredients}
               prefs={s.prefs}
+              showTagHint={!s.tagTouched}
               onAddVoice={() => startVoice("add")}
               onRemove={removeIng}
               onCycleFreshness={cycleFreshness}
@@ -135,7 +149,7 @@ export default function Scrappy() {
               replacingId={s.replacingId}
               goingBad={goingBad}
               rescueCount={rescueCount}
-              onSwap={startSwapVoice}
+              onSwap={openSwap}
               onStartCook={startCook}
             />
           )}
@@ -157,11 +171,30 @@ export default function Scrappy() {
         {s.voiceOpen && (
           <VoiceSheet
             voiceState={s.voiceState}
+            voiceContext={s.voiceContext}
             voiceTitle={s.voiceTitle}
+            voicePartial={s.voicePartial}
+            processingLabel={s.processingLabel}
+            reviewText={s.reviewText}
+            reviewEditing={s.reviewEditing}
+            reviewTyped={s.reviewTyped}
+            error={voiceError}
             onDone={voiceDone}
             onCancel={voiceCancel}
-            onRetry={voiceRetry}
-            onType={voiceType}
+            onReviewChange={reviewChange}
+            onReviewEdit={reviewEdit}
+            onReviewRedo={() => s.voiceContext && startVoice(s.voiceContext)}
+            onReviewSend={reviewSend}
+            onErrorAction={voiceErrorAction}
+          />
+        )}
+        {swapSheetDish && (
+          <SwapSheet
+            dishName={swapSheetDish.name}
+            onSwap={swapNow}
+            onVoice={swapByVoice}
+            onType={swapByText}
+            onClose={closeSwap}
           />
         )}
         {s.prefOpen && s.prefKey && (

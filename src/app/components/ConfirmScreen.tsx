@@ -6,6 +6,8 @@ import { Mic } from "./Mic";
 interface ConfirmScreenProps {
   ingredients: Ingredient[];
   prefs: Prefs;
+  /* Until the first tag change, point out that tags can be tapped. */
+  showTagHint: boolean;
   onAddVoice: () => void;
   onRemove: (id: string) => void;
   onCycleFreshness: (id: string) => void;
@@ -16,6 +18,7 @@ interface ConfirmScreenProps {
 export function ConfirmScreen({
   ingredients,
   prefs,
+  showTagHint,
   onAddVoice,
   onRemove,
   onCycleFreshness,
@@ -116,6 +119,7 @@ export function ConfirmScreen({
                     <span style={css(ing.tagStyle)}>
                       <span style={css(ing.dotStyle)} />
                       {ing.tag}
+                      <TagCaret />
                     </span>
                   ) : (
                     <span
@@ -124,6 +128,7 @@ export function ConfirmScreen({
                       )}
                     >
                       fresh
+                      <TagCaret />
                     </span>
                   )}
                 </span>
@@ -140,6 +145,16 @@ export function ConfirmScreen({
             </div>
           ))}
         </div>
+        {showTagHint && ingredients.length > 0 && (
+          <div
+            style={css(
+              "display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;margin-top:-6px",
+            )}
+          >
+            <span style={css("font-size:9px;opacity:.6")}>▾</span>
+            Tap a tag if I guessed wrong — it&apos;s just my best guess.
+          </div>
+        )}
         {perishNames.length > 0 && (
           <div
             style={css(
@@ -222,4 +237,8 @@ export function ConfirmScreen({
       </div>
     </>
   );
+}
+
+function TagCaret() {
+  return <span style={css("opacity:.55;font-size:8px;margin-left:1px")}>▾</span>;
 }

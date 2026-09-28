@@ -9,11 +9,17 @@ import {
   parsePref,
   swapDish,
 } from "@/lib/api";
-import { startVoiceCapture, type VoiceSession } from "@/lib/voice";
+import {
+  startVoiceCapture,
+  VoiceCaptureError,
+  type VoiceSession,
+} from "@/lib/voice";
 import type { PrefKey } from "@/lib/prefs";
+import type { VoiceErrorAction, VoiceErrorKind } from "../voiceErrors";
 
 export type Screen = "input" | "confirm" | "dishes" | "cook";
-export type VoiceState = "idle" | "listening" | "processing" | "error";
+/* review: showing what was heard (or a text box) before it's sent to the LLM. */
+export type VoiceState = "idle" | "listening" | "processing" | "review" | "error";
 export type VoiceContext =
   | "input"
   | "add"
@@ -22,6 +28,8 @@ export type VoiceContext =
   | "courses"
   | "diet"
   | "allergy";
+/* Contexts whose text can be typed into the voice sheet's text box. */
+type TextContext = "input" | "add" | "swap";
 
 export interface ScrappyState {
   screen: Screen;
@@ -29,11 +37,29 @@ export interface ScrappyState {
   voiceContext: VoiceContext | null;
   voiceState: VoiceState;
   voiceTitle: string;
+  /* Live transcript while listening. */
+  voicePartial: string;
+  processingLabel: string;
+  /* Text under review; kept after a failed send so it can be resent or edited. */
+  reviewText: string;
+  reviewEditing: boolean;
+  /* The text box was opened to type, not to fix a transcript. */
+  reviewTyped: boolean;
+  voiceError: VoiceErrorKind | null;
+  /* The error happened after sending reviewText, which is still there. */
+  errorKeptText: boolean;
+  /* The connection came back while the offline message was showing. */
+  backOnline: boolean;
   ingredients: Ingredient[];
+  /* The user has changed a freshness tag, so the tag hint can go. */
+  tagTouched: boolean;
   prefs: Prefs;
   dishes: Dish[];
   dishesLoading: boolean;
   replacingId: string | null;
+  /* Dish whose "Swap this dish?" choice sheet is open. */
+  swapSheetId: string | null;
+  /* Dish a guided (spoken or typed) swap applies to. */
   swapTargetId: string | null;
   cookDish: number;
   cookStep: number;
@@ -53,11 +79,21 @@ const INITIAL: ScrappyState = {
   voiceContext: null,
   voiceState: "idle",
   voiceTitle: "",
+  voicePartial: "",
+  processingLabel: "",
+  reviewText: "",
+  reviewEditing: false,
+  reviewTyped: false,
+  voiceError: null,
+  errorKeptText: false,
+  backOnline: false,
   ingredients: [],
+  tagTouched: false,
   prefs: { servings: 2, courses: 3, diet: "No restrictions", allergy: "None" },
   dishes: [],
   dishesLoading: false,
   replacingId: null,
+  swapSheetId: null,
   swapTargetId: null,
   cookDish: 0,
   cookStep: 0,
@@ -80,6 +116,21 @@ const VOICE_TITLES: Record<VoiceContext, string> = {
   diet: "Any preference?",
   allergy: "Anything to avoid?",
 };
+
+const TYPED_TITLES: Record<TextContext, string> = {
+  input: "What's in your fridge?",
+  add: "What else have you got?",
+  swap: "What should change?",
+};
+
+const HEARD_TITLE = "Here’s what I heard";
+
+const isTextContext = (ctx: VoiceContext | null): ctx is TextContext =>
+  ctx === "input" || ctx === "add" || ctx === "swap";
+
+// A failed request is the connection's fault if the browser says it's offline.
+const requestFailure = (): VoiceErrorKind =>
+  navigator.onLine ? "service" : "offline";
 
 export function useScrappy() {
   const [state, setRaw] = useState<ScrappyState>(INITIAL);
@@ -114,6 +165,10 @@ export function useScrappy() {
   };
 
   const voiceRef = useRef<VoiceSession | null>(null);
+  // Bumped whenever a voice turn starts, is cancelled, or sends a request.
+  // Recognizer callbacks and LLM replies from an older turn are ignored, so a
+  // cancelled or restarted flow can't jump screens when a late reply lands.
+  const turn = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -121,6 +176,18 @@ export function useScrappy() {
       voiceRef.current?.cancel();
     };
   }, []);
+
+  // Let the offline message say so when the connection comes back.
+  useEffect(() => {
+    const onOnline = () =>
+      setState((s) =>
+        s.voiceState === "error" && s.voiceError === "offline"
+          ? { backOnline: true }
+          : {},
+      );
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [setState]);
 
   // ── Ingredient ingestion ────────────────────────────────────────────────
 
@@ -135,13 +202,6 @@ export function useScrappy() {
     } catch {
       setState({ error: "Couldn't read those ingredients — try again." });
     }
-  };
-
-  const typedInput = () => {
-    const text = window.prompt(
-      "What's in your fridge? e.g. two tomatoes, half a cabbage, three eggs",
-    );
-    if (text && text.trim()) ingestIngredients({ transcript: text.trim() });
   };
 
   const onPhoto = (file: File) => {
@@ -176,99 +236,220 @@ export function useScrappy() {
 
   // ── Voice ───────────────────────────────────────────────────────────────
 
-  // Turns a final transcript into ingredients (input/add), a swap pref, or
-  // a preference value, depending on the current voice context.
-  const resolveVoice = async (ctx: VoiceContext, transcript: string) => {
-    if (ctx === "swap") {
-      const id = stateRef.current.swapTargetId;
-      setState({ voiceOpen: false, voiceState: "idle", swapTargetId: null });
-      if (id) swap(id, transcript.trim() || undefined);
-      return;
-    }
-    if (!transcript.trim()) {
-      setState({ voiceState: "error", voiceTitle: "Didn't catch that" });
-      return;
-    }
-    setState({ voiceState: "processing" });
+  const showVoiceError = (kind: VoiceErrorKind, keptText = false) =>
+    setState({
+      voiceState: "error",
+      voiceError: kind,
+      errorKeptText: keptText,
+      backOnline: false,
+      voicePartial: "",
+      reviewEditing: false,
+    });
+
+  const closeVoice = () => {
+    turn.current++;
+    voiceRef.current?.cancel();
+    setState({ voiceOpen: false, voiceState: "idle", voicePartial: "" });
+  };
+
+  // Sends fridge text to the LLM: replaces the list (input) or appends to it
+  // (add). The text stays in reviewText so a failure can resend or edit it.
+  const sendIngredients = async (ctx: "input" | "add", text: string) => {
+    const my = ++turn.current;
+    setState({
+      voiceState: "processing",
+      voiceTitle: "Reading your fridge…",
+      processingLabel: "Spotting what needs using up first…",
+      voicePartial: "",
+      reviewText: text,
+      reviewEditing: false,
+    });
+    if (!navigator.onLine) return showVoiceError("offline", true);
     try {
-      if (ctx === "input" || ctx === "add") {
-        const { ingredients } = await parseIngredients({ transcript });
-        if (ctx === "add") {
-          setState((s) => ({
-            ingredients: [...s.ingredients, ...ingredients],
-            voiceOpen: false,
-            voiceState: "idle",
-          }));
-        } else {
-          setState({
-            ingredients,
-            screen: "confirm",
-            voiceOpen: false,
-            voiceState: "idle",
-          });
-        }
-        return;
+      const { ingredients } = await parseIngredients({ transcript: text });
+      if (my !== turn.current) return;
+      if (!ingredients.length) return showVoiceError("nofood", true);
+      if (ctx === "add") {
+        setState((s) => ({
+          ingredients: [...s.ingredients, ...ingredients],
+          voiceOpen: false,
+          voiceState: "idle",
+        }));
+      } else {
+        setState({
+          ingredients,
+          screen: "confirm",
+          voiceOpen: false,
+          voiceState: "idle",
+        });
       }
-      const { value } = await parsePref(ctx as PrefKey, transcript);
+    } catch {
+      if (my === turn.current) showVoiceError(requestFailure(), true);
+    }
+  };
+
+  const sendPref = async (key: PrefKey, text: string) => {
+    const my = ++turn.current;
+    setState({
+      voiceState: "processing",
+      processingLabel: "Got it — sorting that out…",
+      voicePartial: "",
+    });
+    if (!navigator.onLine) return showVoiceError("offline");
+    try {
+      const { value } = await parsePref(key, text);
+      if (my !== turn.current) return;
       setState((s) => ({
-        prefs: { ...s.prefs, [ctx as PrefKey]: value },
+        prefs: { ...s.prefs, [key]: value },
         voiceOpen: false,
         voiceState: "idle",
         prefOpen: false,
       }));
     } catch {
-      setState({ voiceState: "error", voiceTitle: "Hmm — one more time?" });
+      if (my === turn.current) showVoiceError(requestFailure());
+    }
+  };
+
+  // Applies guided-swap text to the dish it was opened for.
+  const sendSwap = (text: string) => {
+    const id = stateRef.current.swapTargetId;
+    closeVoice();
+    setState({ swapTargetId: null });
+    if (id) swap(id, text);
+  };
+
+  // A finished transcript: the main fridge input stops for review; everything
+  // else goes straight through.
+  const handleTranscript = (ctx: VoiceContext, text: string) => {
+    const t = text.trim();
+    if (!t) return showVoiceError("noisy");
+    if (ctx === "input") {
+      setState({
+        voiceState: "review",
+        voiceTitle: HEARD_TITLE,
+        reviewText: t,
+        reviewEditing: false,
+        reviewTyped: false,
+        voicePartial: "",
+      });
+    } else if (ctx === "add") {
+      sendIngredients("add", t);
+    } else if (ctx === "swap") {
+      sendSwap(t);
+    } else {
+      sendPref(ctx, t);
     }
   };
 
   const startVoice = async (ctx: VoiceContext) => {
     voiceRef.current?.cancel();
+    const my = ++turn.current;
     setState({
       voiceOpen: true,
       prefOpen: false,
       voiceContext: ctx,
       voiceState: "listening",
       voiceTitle: VOICE_TITLES[ctx],
+      voicePartial: "",
+      reviewEditing: false,
       error: null,
     });
+    if (!navigator.onLine) return showVoiceError("offline");
     try {
-      voiceRef.current = await startVoiceCapture({
-        onFinal: (text) => resolveVoice(ctx, text),
-        onError: () =>
-          setState({ voiceState: "error", voiceTitle: "Hmm — one more time?" }),
+      const session = await startVoiceCapture({
+        onPartial: (text) => {
+          if (my === turn.current) setState({ voicePartial: text });
+        },
+        onFinal: (text) => {
+          if (my === turn.current) handleTranscript(ctx, text);
+        },
+        onError: (err) => {
+          if (my === turn.current) showVoiceError(err.kind);
+        },
       });
-    } catch {
-      setState({ voiceState: "error", voiceTitle: "Microphone unavailable" });
+      if (my !== turn.current) session.cancel();
+      else voiceRef.current = session;
+    } catch (err) {
+      if (my === turn.current)
+        showVoiceError(err instanceof VoiceCaptureError ? err.kind : "permission");
     }
   };
 
   const voiceDone = () => {
-    setState({ voiceState: "processing" });
-    voiceRef.current?.stop(); // flushes the recognizer, then fires onFinal → resolveVoice
+    const ctx = stateRef.current.voiceContext;
+    setState({
+      voiceState: "processing",
+      processingLabel:
+        ctx === "input" ? "Writing that down…" : "Got it — sorting that out…",
+    });
+    voiceRef.current?.stop(); // flushes the recognizer, then fires onFinal
   };
 
   const voiceCancel = () => {
-    voiceRef.current?.cancel();
-    setState({ voiceOpen: false, voiceState: "idle", swapTargetId: null });
+    closeVoice();
+    setState({ swapTargetId: null });
   };
 
   const voiceRetry = () => {
-    if (stateRef.current.voiceContext) startVoice(stateRef.current.voiceContext);
+    const ctx = stateRef.current.voiceContext;
+    if (ctx) startVoice(ctx);
   };
 
-  const voiceType = () => {
+  // Opens the voice sheet straight into an empty text box.
+  const openTyped = (ctx: TextContext) => {
     voiceRef.current?.cancel();
-    const ctx = stateRef.current.voiceContext;
-    const id = stateRef.current.swapTargetId;
-    setState({ voiceOpen: false, voiceState: "idle", swapTargetId: null });
-    if (ctx === "swap") {
-      if (id) {
-        const text = window.prompt("What should change about this dish?") ?? "";
-        swap(id, text.trim() || undefined);
-      }
-      return;
+    turn.current++;
+    setState({
+      voiceOpen: true,
+      prefOpen: false,
+      voiceContext: ctx,
+      voiceState: "review",
+      voiceTitle: TYPED_TITLES[ctx],
+      reviewText: "",
+      reviewEditing: true,
+      reviewTyped: true,
+      voicePartial: "",
+      error: null,
+    });
+  };
+
+  const typedInput = () => openTyped("input");
+
+  const reviewChange = (text: string) => setState({ reviewText: text });
+  const reviewEdit = () => setState({ reviewEditing: true });
+
+  const reviewSend = () => {
+    const { voiceContext: ctx, reviewText } = stateRef.current;
+    const t = reviewText.trim();
+    if (!t) return;
+    if (ctx === "swap") sendSwap(t);
+    else if (ctx === "input" || ctx === "add") sendIngredients(ctx, t);
+  };
+
+  const voiceErrorAction = (act: VoiceErrorAction) => {
+    const { voiceContext: ctx, reviewTyped } = stateRef.current;
+    switch (act) {
+      case "record":
+        return voiceRetry();
+      case "type":
+        if (isTextContext(ctx)) openTyped(ctx);
+        return;
+      case "pick":
+        closeVoice();
+        setState({ prefOpen: true });
+        return;
+      case "resend":
+        return reviewSend();
+      case "edit":
+        setState({
+          voiceState: "review",
+          voiceTitle: reviewTyped && isTextContext(ctx) ? TYPED_TITLES[ctx] : HEARD_TITLE,
+          reviewEditing: true,
+        });
+        return;
+      case "close":
+        return voiceCancel();
     }
-    typedInput();
   };
 
   // ── Ingredients (confirm screen) ────────────────────────────────────────
@@ -279,6 +460,7 @@ export function useScrappy() {
   // Cycles three-tier freshness: fresh → use soon → going bad → fresh.
   const cycleFreshness = (id: string) =>
     setState((s) => ({
+      tagTouched: true,
       ingredients: s.ingredients.map((i) =>
         i.id === id
           ? {
@@ -320,11 +502,25 @@ export function useScrappy() {
     }
   };
 
-  // Tapping Swap opens the voice sheet so the user can steer the alternative;
-  // saying nothing just swaps.
-  const startSwapVoice = (id: string) => {
-    setState({ swapTargetId: id });
+  // Swap asks first ("Swap this dish?"): a plain swap, or one steered by
+  // voice or text. A swap discards the dish, so a stray tap shouldn't.
+  const openSwap = (id: string) => setState({ swapSheetId: id });
+  const closeSwap = () => setState({ swapSheetId: null });
+
+  const swapNow = () => {
+    const id = stateRef.current.swapSheetId;
+    setState({ swapSheetId: null });
+    if (id) swap(id);
+  };
+
+  const swapByVoice = () => {
+    setState({ swapTargetId: stateRef.current.swapSheetId, swapSheetId: null });
     startVoice("swap");
+  };
+
+  const swapByText = () => {
+    setState({ swapTargetId: stateRef.current.swapSheetId, swapSheetId: null });
+    openTyped("swap");
   };
 
   // ── Cook + image generation ──────────────────────────────────────────────
@@ -416,6 +612,7 @@ export function useScrappy() {
   };
 
   const restart = () => {
+    turn.current++;
     voiceRef.current?.cancel();
     clearCt();
     setRaw(INITIAL);
@@ -427,8 +624,10 @@ export function useScrappy() {
     startVoice,
     voiceDone,
     voiceCancel,
-    voiceRetry,
-    voiceType,
+    voiceErrorAction,
+    reviewChange,
+    reviewEdit,
+    reviewSend,
     // Ingredients
     onPhoto,
     typedInput,
@@ -440,7 +639,11 @@ export function useScrappy() {
     closePref,
     // Recipes
     generate,
-    startSwapVoice,
+    openSwap,
+    closeSwap,
+    swapNow,
+    swapByVoice,
+    swapByText,
     // Cook
     startCook,
     setCookDish,

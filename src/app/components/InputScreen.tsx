@@ -67,6 +67,14 @@ export function InputScreen({ onVoice, onPhoto, onType }: InputScreenProps) {
           <div style={css("font-size:13px;color:var(--muted);margin-top:3px")}>
             e.g. “two tomatoes, half a cabbage, three eggs”
           </div>
+          <div
+            style={css(
+              "font-size:12.5px;color:var(--ink-soft);margin-top:7px;line-height:1.4;max-width:260px",
+            )}
+          >
+            Mention anything that needs using up — I&apos;ll bump it to the
+            front.
+          </div>
         </div>
         <label
           style={css(

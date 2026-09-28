@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateImage } from "@/lib/server/midjourney";
+import { mockAI, mockDelay, mockImage } from "@/lib/server/mock";
 
 export const runtime = "nodejs";
 // Midjourney jobs are slow (async generation + polling); allow a long request.
@@ -41,6 +42,11 @@ export async function POST(req: Request) {
   const kind = body.kind === "finale" ? "finale" : "step";
   if (!prompt) {
     return NextResponse.json({ error: "prompt required" }, { status: 400 });
+  }
+
+  if (mockAI()) {
+    await mockDelay(1200);
+    return NextResponse.json({ url: mockImage(prompt, kind) });
   }
 
   try {

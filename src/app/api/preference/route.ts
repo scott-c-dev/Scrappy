@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { claude, MODEL } from "@/lib/server/claude";
+import { mockAI, mockDelay, mockPref } from "@/lib/server/mock";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,11 @@ export async function POST(req: Request) {
   const { key, transcript } = body;
   if (!key || !(key in OPTIONS) || !transcript) {
     return NextResponse.json({ error: "key and transcript required" }, { status: 400 });
+  }
+
+  if (mockAI()) {
+    await mockDelay(500);
+    return NextResponse.json({ value: mockPref(key, transcript) });
   }
 
   const choices = OPTIONS[key].map(String);

@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { claude, MODEL } from "@/lib/server/claude";
+import { mockAI, mockDelay, mockDishes, mockSwap } from "@/lib/server/mock";
 import { allowedSet, normalize, STAPLES } from "@/lib/staples";
 import type { Dish, Ingredient, Prefs, Step } from "@/lib/types";
 
@@ -196,6 +197,15 @@ export async function POST(req: Request) {
   const count = isSwap ? 1 : Math.max(1, Math.min(5, body.prefs.courses || 3));
 
   const note = body.note?.trim();
+
+  if (mockAI()) {
+    await mockDelay(1500);
+    return isSwap
+      ? NextResponse.json({
+          dish: mockSwap(body.ingredients, body.keepRescue ?? [], body.exclude ?? [], note),
+        })
+      : NextResponse.json({ dishes: mockDishes(body.ingredients, count) });
+  }
   const extra = isSwap
     ? `\n\nThis replaces a previous dish. Pick something different${
         body.exclude?.length ? ` from: ${body.exclude.join(", ")}` : ""

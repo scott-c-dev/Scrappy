@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { claude, MODEL } from "@/lib/server/claude";
+import { mockAI, mockDelay, mockIngredients } from "@/lib/server/mock";
 import type { FreshnessTag, Ingredient } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -70,6 +71,13 @@ export async function POST(req: Request) {
       { error: "provide a transcript or an imageBase64" },
       { status: 400 },
     );
+  }
+
+  if (mockAI()) {
+    await mockDelay();
+    return NextResponse.json({
+      ingredients: mockIngredients(transcript ?? "", !!imageBase64),
+    });
   }
 
   const content: Anthropic.ContentBlockParam[] = [];

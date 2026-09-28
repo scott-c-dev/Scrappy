@@ -1,0 +1,220 @@
+/* Offline stand-ins for the AI routes, switched on with MOCK_AI=1 in
+   .env.local. They make no network calls and cost no credit, so the whole
+   flow can be tested when the Anthropic account is out of credit or
+   Midjourney isn't set up.
+
+   The fakes respond to what was actually said, so every UI path is reachable:
+   naming foods gives an ingredient list, saying no known food gives an empty
+   one (the "no food" message), and a failed request can be seen by turning
+   the mock off while out of credit (the "service" message). */
+
+import "server-only";
+import type { FreshnessTag, Ingredient, Dish, Prefs, Step } from "@/lib/types";
+
+export function mockAI(): boolean {
+  const v = process.env.MOCK_AI?.trim().toLowerCase();
+  return !!v && v !== "0" && v !== "false";
+}
+
+// A short pause so loading states are visible, as with the real APIs.
+export const mockDelay = (ms = 900) => new Promise((r) => setTimeout(r, ms));
+
+// ── Ingredients ──────────────────────────────────────────────────────────────
+
+// [display name, pattern]. Patterns accept the usual plurals.
+const FOODS: [string, RegExp][] = [
+  ["Curry sauce", /\bcurry sauce\b/],
+  ["Soy sauce", /\bsoy sauce\b/],
+  ["Leftover rice", /\bleftover rice\b/],
+  ["Rice", /\brice\b/],
+  ["Tomatoes", /\btomato(e?s)?\b/],
+  ["Potatoes", /\bpotato(e?s)?\b/],
+  ["Cabbage", /\bcabbages?\b/],
+  ["Eggs", /\beggs?\b/],
+  ["Tofu", /\btofu\b/],
+  ["Scallions", /\b(scallions?|spring onions?|green onions?)\b/],
+  ["Onions", /\bonions?\b/],
+  ["Garlic", /\bgarlic\b/],
+  ["Carrots", /\bcarrots?\b/],
+  ["Apples", /\bapples?\b/],
+  ["Bananas", /\bbananas?\b/],
+  ["Chicken", /\bchicken\b/],
+  ["Beef", /\bbeef\b/],
+  ["Pork", /\bpork\b/],
+  ["Bacon", /\bbacon\b/],
+  ["Sausages", /\bsausages?\b/],
+  ["Salmon", /\bsalmon\b/],
+  ["Shrimp", /\b(shrimps?|prawns?)\b/],
+  ["Milk", /\bmilk\b/],
+  ["Cheese", /\bcheeses?\b/],
+  ["Yogurt", /\by(o|og)gh?urts?\b/],
+  ["Butter", /\bbutter\b/],
+  ["Bread", /\bbread\b/],
+  ["Spinach", /\bspinach\b/],
+  ["Lettuce", /\blettuces?\b/],
+  ["Broccoli", /\bbroccoli\b/],
+  ["Mushrooms", /\bmushrooms?\b/],
+  ["Bell peppers", /\b(bell )?peppers\b/],
+  ["Cucumber", /\bcucumbers?\b/],
+  ["Zucchini", /\bzucchinis?\b/],
+  ["Eggplant", /\beggplants?\b/],
+  ["Corn", /\bcorn\b/],
+  ["Beans", /\bbeans\b/],
+  ["Pasta", /\bpasta\b/],
+  ["Noodles", /\bnoodles?\b/],
+  ["Lemons", /\blemons?\b/],
+];
+
+const NUMBER_WORDS: Record<string, number> = {
+  a: 1, an: 1, one: 1, two: 2, to: 2, too: 2, three: 3, four: 4, for: 4,
+  five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+};
+
+const GOING_BAD = /\b(wilt|going bad|gone soft|soft|expir|old|brown|last week|turning|about to go)/;
+const USE_SOON = /\b(leftover|opened|half[- ]used|use soon|yesterday)/;
+
+function qtyFrom(clause: string, food: RegExp): string {
+  if (/\bhalf\b/.test(clause)) return "½";
+  const words = clause.split(/\s+/);
+  const at = words.findIndex((w) => food.test(w));
+  // Look at the few words just before the food name ("I got two tomatoes").
+  for (let i = at - 1; i >= Math.max(0, at - 3); i--) {
+    const w = words[i];
+    if (/^\d+$/.test(w)) return w;
+    if (w in NUMBER_WORDS && w !== "a" && w !== "an") return String(NUMBER_WORDS[w]);
+  }
+  if (/\b(some|a bit of|a little)\b/.test(clause)) return "some";
+  return "as needed";
+}
+
+function tagFrom(clause: string): FreshnessTag {
+  if (GOING_BAD.test(clause)) return "going bad";
+  if (USE_SOON.test(clause)) return "use soon";
+  return null;
+}
+
+export function mockIngredients(transcript: string, hasImage: boolean): Ingredient[] {
+  const text = transcript.toLowerCase();
+  const seen = new Set<string>();
+  const out: Ingredient[] = [];
+  // Freshness and amounts belong to the phrase a food was mentioned in.
+  for (const clause of text.split(/[,.;]|\band\b|\bthen\b/)) {
+    for (const [name, re] of FOODS) {
+      if (seen.has(name) || !re.test(clause)) continue;
+      // "leftover rice" also matches "rice"; keep only the more specific one.
+      if (name === "Rice" && seen.has("Leftover rice")) continue;
+      seen.add(name);
+      out.push({
+        id: `ing-${out.length}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        name,
+        qty: qtyFrom(clause.trim(), re),
+        tag: name === "Leftover rice" ? "use soon" : tagFrom(clause),
+      });
+    }
+  }
+  if (!out.length && hasImage) {
+    return [
+      { id: "ing-0-cabbage", name: "Cabbage", qty: "½", tag: "going bad" },
+      { id: "ing-1-eggs", name: "Eggs", qty: "3", tag: null },
+      { id: "ing-2-tomatoes", name: "Tomatoes", qty: "2", tag: "use soon" },
+    ];
+  }
+  return out;
+}
+
+// ── Preferences ──────────────────────────────────────────────────────────────
+
+export function mockPref(key: keyof Prefs, transcript: string): string | number {
+  const t = transcript.toLowerCase();
+  if (key === "servings" || key === "courses") {
+    const max = key === "servings" ? 6 : 5;
+    const digit = t.match(/\d+/)?.[0];
+    const word = t.split(/\W+/).find((w) => w in NUMBER_WORDS && w !== "a" && w !== "an");
+    const n = digit ? Number(digit) : word ? NUMBER_WORDS[word] : key === "servings" ? 2 : 3;
+    return Math.min(max, Math.max(1, n));
+  }
+  if (key === "diet") {
+    if (/veg/.test(t)) return "Vegetarian";
+    if (/oil|light|lean/.test(t)) return "Low-oil";
+    if (/protein|gym|muscle/.test(t)) return "High-protein";
+    return "No restrictions";
+  }
+  if (/peanut|nut/.test(t)) return "Peanuts";
+  if (/shellfish|shrimp|prawn|crab/.test(t)) return "Shellfish";
+  if (/gluten|wheat/.test(t)) return "Gluten";
+  if (/dairy|milk|lactose/.test(t)) return "Dairy";
+  return "None";
+}
+
+// ── Recipes ──────────────────────────────────────────────────────────────────
+
+const STYLES: { name: (a: string, b: string) => string; short: string; blurb: string }[] = [
+  { name: (a, b) => `${a} & ${b} Stir-fry`, short: "Stir-fry", blurb: "Hot pan, five minutes, everything glossy." },
+  { name: (a) => `Brothy ${a} Soup`, short: "Soup", blurb: "Comforting, forgiving, ready in fifteen." },
+  { name: (a, b) => `${a} & ${b} Hash`, short: "Hash", blurb: "Crispy bits and soft middles, one pan." },
+  { name: (a) => `Charred ${a}`, short: "Charred", blurb: "Blistered edges, salty finish." },
+  { name: (a, b) => `${a} & ${b} Braise`, short: "Braise", blurb: "Low and slow, with a glossy little sauce." },
+  { name: (a) => `${a} Fritters`, short: "Fritters", blurb: "Golden, crunchy, better than they sound." },
+];
+
+function steps(uses: string[]): Step[] {
+  const [a, b] = uses;
+  return [
+    { text: `Prep the ${a.toLowerCase()}${b ? ` and ${b.toLowerCase()}` : ""} into bite-sized pieces.`, img: true, cap: `reference · prepping ${a.toLowerCase()}`, imagePrompt: `chopping ${a.toLowerCase()} on a board` },
+    { text: "Medium-high heat, a little oil, and a pinch of salt.", img: false },
+    { text: `Cook the ${a.toLowerCase()} until it takes on some colour, then add the rest.`, img: true, cap: "reference · getting colour", imagePrompt: `${a.toLowerCase()} browning in a pan` },
+    { text: "Taste, adjust the salt, and serve hot.", img: false },
+  ];
+}
+
+function mockDish(ingredients: Ingredient[], style: number, rescue: string[], idx: number, note?: string): Dish {
+  const s = STYLES[style % STYLES.length];
+  // Lead with what needs rescuing, then fill in from the rest of the list.
+  const names = [...rescue, ...ingredients.map((i) => i.name).filter((n) => !rescue.includes(n))];
+  const rotated = [...names.slice(idx % names.length), ...names.slice(0, idx % names.length)];
+  const lead = rescue.length ? [rescue[idx % rescue.length], ...rotated.filter((n) => n !== rescue[idx % rescue.length])] : rotated;
+  const uses = lead.slice(0, 3);
+  const [a, b = "Scallions"] = uses;
+  const name = s.name(a, b);
+  return {
+    id: `dish-${idx}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    name,
+    short: s.short,
+    blurb: note ? `${s.blurb} (You asked: “${note}”.)` : s.blurb,
+    rescue: uses.filter((u) => rescue.includes(u)),
+    uses,
+    steps: steps(uses),
+  };
+}
+
+export function mockDishes(ingredients: Ingredient[], count: number): Dish[] {
+  const rescue = ingredients.filter((i) => i.tag !== null).map((i) => i.name);
+  return Array.from({ length: count }, (_, i) => mockDish(ingredients, i, rescue, i));
+}
+
+export function mockSwap(
+  ingredients: Ingredient[],
+  keepRescue: string[],
+  exclude: string[],
+  note?: string,
+): Dish {
+  const rescue = keepRescue.length
+    ? keepRescue
+    : ingredients.filter((i) => i.tag !== null).map((i) => i.name);
+  // First style whose dish name isn't already on screen.
+  for (let i = 0; i < STYLES.length * 2; i++) {
+    const d = mockDish(ingredients, i, rescue, i + exclude.length, note);
+    if (!exclude.includes(d.name)) return { ...d, id: `${d.id}-swap-${Date.now()}` };
+  }
+  return mockDish(ingredients, exclude.length, rescue, exclude.length, note);
+}
+
+// ── Images ───────────────────────────────────────────────────────────────────
+
+// An inline SVG placeholder, so no image service is needed.
+export function mockImage(prompt: string, kind: "step" | "finale"): string {
+  const [w, h] = kind === "finale" ? [600, 600] : [800, 600];
+  const label = prompt.split(/[.—]/)[0].slice(0, 60).replace(/[<>&"]/g, "");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#DCE7C5"/><stop offset="1" stop-color="#F5EBC8"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/><text x="50%" y="46%" text-anchor="middle" font-family="sans-serif" font-size="28" fill="#505A3F">mock image</text><text x="50%" y="56%" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#8A9172">${label}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}

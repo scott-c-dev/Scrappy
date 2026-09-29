@@ -38,9 +38,10 @@ export function ConfirmScreen({
     const tagStyle =
       "display:inline-flex;align-items:center;gap:5px;font-family:var(--font-label);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;" +
       (strong ? "color:var(--rescue);" : "color:var(--muted);");
+    // Every tier gets a dot: amber for anything on the clock, green for fresh.
     const dotStyle =
       "width:5px;height:5px;border-radius:50%;display:inline-block;background:" +
-      (strong ? "var(--rescue)" : "var(--muted)");
+      (strong || soon ? "var(--rescue)" : "var(--fresh)");
     return { ...i, chipStyle, tagStyle, dotStyle };
   });
 
@@ -115,22 +116,11 @@ export function ConfirmScreen({
                   <span style={css("font-size:12px;color:var(--muted)")}>
                     {ing.qty}
                   </span>
-                  {ing.tag ? (
-                    <span style={css(ing.tagStyle)}>
-                      <span style={css(ing.dotStyle)} />
-                      {ing.tag}
-                      <TagCaret />
-                    </span>
-                  ) : (
-                    <span
-                      style={css(
-                        "font-family:var(--font-label);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:var(--muted);opacity:.7",
-                      )}
-                    >
-                      fresh
-                      <TagCaret />
-                    </span>
-                  )}
+                  <span style={css(ing.tagStyle)}>
+                    <span style={css(ing.dotStyle)} />
+                    {ing.tag ?? "fresh"}
+                    <TagCaret />
+                  </span>
                 </span>
               </div>
               <button

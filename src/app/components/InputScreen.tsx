@@ -65,7 +65,7 @@ export function InputScreen({ onVoice, onPhoto, onType }: InputScreenProps) {
             Tap and tell me
           </div>
           <div style={css("font-size:13px;color:var(--muted);margin-top:3px")}>
-            e.g. “two tomatoes, half a cabbage, three eggs”
+            e.g. “half a cabbage that&apos;s wilting, three eggs, leftover rice”
           </div>
           <div
             style={css(

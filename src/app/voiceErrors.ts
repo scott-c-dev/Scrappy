@@ -1,3 +1,4 @@
+import type { PrefKey } from "@/lib/prefs";
 import type { VoiceContext } from "./hooks/useScrappy";
 
 /* The five ways a voice turn can fail, grouped by when they happen:
@@ -26,7 +27,7 @@ export interface VoiceErrorView {
   secondary: ErrorButton | null;
 }
 
-const isPref = (ctx: VoiceContext) =>
+export const isPref = (ctx: VoiceContext | null): ctx is PrefKey =>
   ctx === "servings" || ctx === "courses" || ctx === "diet" || ctx === "allergy";
 
 /* `keptText`: the failure happened after sending text we still have, so the
@@ -82,6 +83,14 @@ export function voiceErrorView(
       };
 
     case "service":
+      if (isPref(ctx))
+        return {
+          title: "My kitchen brain is out",
+          body: "Something went wrong on my end, not yours. Give it a minute, then try again.",
+          icon: "cloud",
+          primary: retry,
+          secondary: { label: "Not now", act: "close" },
+        };
       return {
         title: "My kitchen brain is out",
         body:

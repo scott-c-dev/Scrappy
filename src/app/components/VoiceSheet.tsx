@@ -1,6 +1,6 @@
 import { css } from "@/lib/css";
 import type { VoiceContext, VoiceState } from "../hooks/useScrappy";
-import type { VoiceErrorAction, VoiceErrorView } from "../voiceErrors";
+import { isPref, type VoiceErrorAction, type VoiceErrorView } from "../voiceErrors";
 import { Mic } from "./Mic";
 
 interface VoiceSheetProps {
@@ -46,6 +46,7 @@ export function VoiceSheet({
   onErrorAction,
 }: VoiceSheetProps) {
   const isSwap = voiceContext === "swap";
+  const isPrefCtx = isPref(voiceContext);
   // Tapping outside only dismisses when nothing would be lost or left running.
   const dismissable = voiceState === "listening" || voiceState === "error";
   const showPartial =
@@ -58,7 +59,9 @@ export function VoiceSheet({
       ? "Fix anything I misheard — amounts are optional."
       : isSwap
         ? "Tell me what to change — like “make it spicier” or “no tofu.”"
-        : "List what you’ve got — amounts are optional.";
+        : isPrefCtx
+          ? "Say it how you’d say it — I’ll sort it out."
+          : "List what you’ve got — amounts are optional.";
 
   return (
     <div
@@ -172,7 +175,9 @@ export function VoiceSheet({
                 placeholder={
                   isSwap
                     ? "make it spicier, no tofu…"
-                    : "half a cabbage that's wilting, three eggs, leftover rice…"
+                    : isPrefCtx
+                      ? "e.g. make it for four"
+                      : "half a cabbage that's wilting, three eggs, leftover rice…"
                 }
                 style={css(
                   "width:100%;resize:none;background:var(--card);border:1.5px solid var(--accent);border-radius:var(--radius-sm);padding:13px 15px;font-family:var(--font-body);font-size:15.5px;color:var(--ink);line-height:1.5;outline:none",
@@ -212,7 +217,7 @@ export function VoiceSheet({
                   PRIMARY_BTN + (canSend ? "" : ";opacity:.45;cursor:default"),
                 )}
               >
-                {isSwap ? "Swap it →" : "Cook with this →"}
+                {isSwap ? "Swap it →" : isPrefCtx ? "Use this →" : "Cook with this →"}
               </button>
             </div>
           </div>

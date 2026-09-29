@@ -14,8 +14,8 @@ import {
   VoiceCaptureError,
   type VoiceSession,
 } from "@/lib/voice";
-import type { PrefKey } from "@/lib/prefs";
-import type { VoiceErrorAction, VoiceErrorKind } from "../voiceErrors";
+import { PREF_TITLES, type PrefKey } from "@/lib/prefs";
+import { isPref, type VoiceErrorAction, type VoiceErrorKind } from "../voiceErrors";
 
 export type Screen = "input" | "confirm" | "dishes" | "cook";
 /* review: showing what was heard (or a text box) before it's sent to the LLM. */
@@ -28,8 +28,6 @@ export type VoiceContext =
   | "courses"
   | "diet"
   | "allergy";
-/* Contexts whose text can be typed into the voice sheet's text box. */
-type TextContext = "input" | "add" | "swap";
 
 export interface ScrappyState {
   screen: Screen;
@@ -117,16 +115,15 @@ const VOICE_TITLES: Record<VoiceContext, string> = {
   allergy: "Anything to avoid?",
 };
 
-const TYPED_TITLES: Record<TextContext, string> = {
+const TYPED_TITLES: Record<"input" | "add" | "swap", string> = {
   input: "What's in your fridge?",
   add: "What else have you got?",
   swap: "What should change?",
 };
+const typedTitle = (ctx: VoiceContext) =>
+  isPref(ctx) ? PREF_TITLES[ctx] : TYPED_TITLES[ctx];
 
 const HEARD_TITLE = "Here’s what I heard";
-
-const isTextContext = (ctx: VoiceContext | null): ctx is TextContext =>
-  ctx === "input" || ctx === "add" || ctx === "swap";
 
 // A failed request is the connection's fault if the browser says it's offline.
 const requestFailure = (): VoiceErrorKind =>
@@ -259,7 +256,8 @@ export function useScrappy() {
     setState({
       voiceState: "processing",
       voiceTitle: "Reading your fridge…",
-      processingLabel: "Spotting what needs using up first…",
+      processingLabel:
+        ctx === "input" ? "Spotting what needs using up first…" : "One sec…",
       voicePartial: "",
       reviewText: text,
       reviewEditing: false,
@@ -292,10 +290,13 @@ export function useScrappy() {
     const my = ++turn.current;
     setState({
       voiceState: "processing",
-      processingLabel: "Got it — sorting that out…",
+      voiceTitle: "Got it…",
+      processingLabel: "One sec…",
       voicePartial: "",
+      reviewText: text,
+      reviewEditing: false,
     });
-    if (!navigator.onLine) return showVoiceError("offline");
+    if (!navigator.onLine) return showVoiceError("offline", true);
     try {
       const { value } = await parsePref(key, text);
       if (my !== turn.current) return;
@@ -306,7 +307,7 @@ export function useScrappy() {
         prefOpen: false,
       }));
     } catch {
-      if (my === turn.current) showVoiceError(requestFailure());
+      if (my === turn.current) showVoiceError(requestFailure(), true);
     }
   };
 
@@ -396,7 +397,7 @@ export function useScrappy() {
   };
 
   // Opens the voice sheet straight into an empty text box.
-  const openTyped = (ctx: TextContext) => {
+  const openTyped = (ctx: VoiceContext) => {
     voiceRef.current?.cancel();
     turn.current++;
     setState({
@@ -404,7 +405,7 @@ export function useScrappy() {
       prefOpen: false,
       voiceContext: ctx,
       voiceState: "review",
-      voiceTitle: TYPED_TITLES[ctx],
+      voiceTitle: typedTitle(ctx),
       reviewText: "",
       reviewEditing: true,
       reviewTyped: true,
@@ -424,6 +425,7 @@ export function useScrappy() {
     if (!t) return;
     if (ctx === "swap") sendSwap(t);
     else if (ctx === "input" || ctx === "add") sendIngredients(ctx, t);
+    else if (isPref(ctx)) sendPref(ctx, t);
   };
 
   const voiceErrorAction = (act: VoiceErrorAction) => {
@@ -432,7 +434,7 @@ export function useScrappy() {
       case "record":
         return voiceRetry();
       case "type":
-        if (isTextContext(ctx)) openTyped(ctx);
+        if (ctx) openTyped(ctx);
         return;
       case "pick":
         closeVoice();
@@ -440,13 +442,17 @@ export function useScrappy() {
         return;
       case "resend":
         return reviewSend();
-      case "edit":
+      case "edit": {
+        // A preference phrase is short, so fixing it reads like typing it.
+        const typed = reviewTyped || isPref(ctx);
         setState({
           voiceState: "review",
-          voiceTitle: reviewTyped && isTextContext(ctx) ? TYPED_TITLES[ctx] : HEARD_TITLE,
+          voiceTitle: typed && ctx ? typedTitle(ctx) : HEARD_TITLE,
           reviewEditing: true,
+          reviewTyped: typed,
         });
         return;
+      }
       case "close":
         return voiceCancel();
     }

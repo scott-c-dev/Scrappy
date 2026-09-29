@@ -65,7 +65,7 @@ export function SwapSheet({ dishName, onSwap, onVoice, onType, onClose }: SwapSh
           <button
             onClick={onType}
             style={css(
-              "cursor:pointer;border:none;background:none;color:var(--ink-soft);font-family:var(--font-body);font-size:13px;font-weight:600;text-decoration:underline;text-underline-offset:3px;padding:2px",
+              "cursor:pointer;border:none;background:none;color:var(--muted);font-family:var(--font-body);font-size:13px;font-weight:600;text-decoration:underline;text-underline-offset:3px;padding:2px",
             )}
           >
             or type it
@@ -88,8 +88,10 @@ export function SwapIcon({ size }: { size: number }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M4 8h13l-3.5-3.5" />
-      <path d="M20 16H7l3.5 3.5" />
+      <path d="M4 8h15" />
+      <path d="M15 4l4 4-4 4" />
+      <path d="M20 16H5" />
+      <path d="M9 12l-4 4 4 4" />
     </svg>
   );
 }

@@ -1,16 +1,17 @@
 import { css } from "@/lib/css";
 import type { Ingredient, Prefs } from "@/lib/types";
 import type { PrefKey } from "@/lib/prefs";
+import { amountText } from "@/lib/units";
+import { onTheClock, tierOf } from "./freshness";
 import { Mic } from "./Mic";
 
 interface ConfirmScreenProps {
   ingredients: Ingredient[];
   prefs: Prefs;
-  /* Until the first tag change, point out that tags can be tapped. */
-  showTagHint: boolean;
   onAddVoice: () => void;
   onRemove: (id: string) => void;
-  onCycleFreshness: (id: string) => void;
+  /* Opens the adjust card (amount, unit, freshness) for an ingredient. */
+  onAdjust: (id: string) => void;
   onOpenPref: (key: PrefKey) => void;
   onGenerate: () => void;
 }
@@ -18,40 +19,32 @@ interface ConfirmScreenProps {
 export function ConfirmScreen({
   ingredients,
   prefs,
-  showTagHint,
   onAddVoice,
   onRemove,
-  onCycleFreshness,
+  onAdjust,
   onOpenPref,
   onGenerate,
 }: ConfirmScreenProps) {
+  // Only freshness the user stated gets a label; "not sure" shows nothing.
   const enriched = ingredients.map((i) => {
-    const strong = i.tag === "going bad";
-    const soon = i.tag === "use soon";
+    const tier = tierOf(i.tag);
     const chipStyle =
-      "display:flex;align-items:flex-start;gap:9px;padding:9px 11px 9px 13px;border-radius:14px;" +
-      (strong
+      "cursor:pointer;user-select:none;display:flex;align-items:flex-start;gap:10px;padding:9px 11px 9px 13px;border-radius:14px;" +
+      (i.tag === "going bad"
         ? "background:var(--rescue-bg);border:1.5px solid var(--rescue);"
-        : soon
-          ? "background:var(--card);border:1px solid var(--accent-soft);"
+        : i.tag === "use soon"
+          ? "background:var(--card);border:1.5px solid var(--soon);"
           : "background:var(--card);border:1px solid var(--line);");
-    const tagStyle =
-      "display:inline-flex;align-items:center;gap:5px;font-family:var(--font-label);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;" +
-      (strong ? "color:var(--rescue);" : "color:var(--muted);");
-    // Every tier gets a dot: amber for anything on the clock, green for fresh.
-    const dotStyle =
-      "width:5px;height:5px;border-radius:50%;display:inline-block;background:" +
-      (strong || soon ? "var(--rescue)" : "var(--fresh)");
-    return { ...i, chipStyle, tagStyle, dotStyle };
+    return { ...i, tier, chipStyle, amount: amountText(i) };
   });
 
-  const perishNames = ingredients
-    .filter((i) => i.tag === "going bad")
-    .map((i) => i.name);
-  const perishClaim = perishNames.length
-    ? perishNames.join(" and ") +
-      " are on their way out — I’ll build around them first."
-    : "Nothing urgent in here — I’ll just cook you something good.";
+  const urgent = ingredients
+    .filter((i) => onTheClock(i.tag))
+    .map((i) => i.name.toLowerCase());
+  const perishClaim =
+    urgent.length === 1
+      ? `Your ${urgent[0]} is on the clock — I’ll cook it first.`
+      : `Your ${urgent.slice(0, -1).join(", ")} and ${urgent[urgent.length - 1]} are on the clock — I’ll cook them first.`;
 
   const prefChips: { key: PrefKey; label: string; emph: boolean }[] = [
     {
@@ -95,36 +88,60 @@ export function ConfirmScreen({
               "font-size:13.5px;color:var(--ink-soft);margin:6px 0 0;line-height:1.45",
             )}
           >
-            Tap × to drop anything. Amounts are a guess — “as needed” is
-            fine.
+            Tap × to drop anything. Tap an item to change its amount or
+            freshness — totally optional.
           </p>
         </div>
         <div style={css("display:flex;flex-wrap:wrap;gap:8px")}>
           {enriched.map((ing) => (
-            <div key={ing.id} style={css(ing.chipStyle)}>
-              <div
-                onClick={() => onCycleFreshness(ing.id)}
-                title="Tap to change freshness"
-                style={css(
-                  "cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:0",
-                )}
-              >
+            <div
+              key={ing.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onAdjust(ing.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onAdjust(ing.id);
+              }}
+              className="press"
+              style={css(ing.chipStyle)}
+            >
+              <div style={css("display:flex;flex-direction:column;gap:4px;min-width:0")}>
                 <span style={css("font-size:14px;font-weight:700;color:var(--ink)")}>
                   {ing.name}
                 </span>
-                <span style={css("display:flex;align-items:center;gap:7px")}>
-                  <span style={css("font-size:12px;color:var(--muted)")}>
-                    {ing.qty}
+                <span
+                  style={css("display:flex;align-items:center;gap:8px;flex-wrap:wrap")}
+                >
+                  <span
+                    style={css(
+                      "font-size:12px;color:var(--ink-soft);font-weight:600;border-bottom:1px dashed var(--muted);line-height:1.25",
+                    )}
+                  >
+                    {ing.amount}
                   </span>
-                  <span style={css(ing.tagStyle)}>
-                    <span style={css(ing.dotStyle)} />
-                    {ing.tag ?? "fresh"}
-                    <TagCaret />
-                  </span>
+                  {ing.tier && (
+                    <span
+                      style={css(
+                        "display:inline-flex;align-items:center;gap:5px;font-family:var(--font-label);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:" +
+                          ing.tier.ink,
+                      )}
+                    >
+                      <span
+                        style={css(
+                          "width:6px;height:6px;border-radius:50%;display:inline-block;flex:none;background:" +
+                            ing.tier.color,
+                        )}
+                      />
+                      {ing.tier.label}
+                    </span>
+                  )}
                 </span>
               </div>
               <button
-                onClick={() => onRemove(ing.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(ing.id);
+                }}
                 aria-label="Remove"
                 style={css(
                   "cursor:pointer;border:none;background:none;color:var(--muted);font-size:17px;line-height:1;padding:2px 0 4px;align-self:flex-start",
@@ -135,17 +152,7 @@ export function ConfirmScreen({
             </div>
           ))}
         </div>
-        {showTagHint && ingredients.length > 0 && (
-          <div
-            style={css(
-              "display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;margin-top:-6px",
-            )}
-          >
-            <span style={css("font-size:9px;opacity:.6")}>▾</span>
-            Tap a tag if I guessed wrong — it&apos;s just my best guess.
-          </div>
-        )}
-        {perishNames.length > 0 && (
+        {urgent.length > 0 && (
           <div
             style={css(
               "display:flex;gap:11px;align-items:flex-start;background:var(--rescue-bg);border:1px solid var(--rescue);border-radius:var(--radius-sm);padding:13px 14px",
@@ -227,8 +234,4 @@ export function ConfirmScreen({
       </div>
     </>
   );
-}
-
-function TagCaret() {
-  return <span style={css("opacity:.55;font-size:8px;margin-left:1px")}>▾</span>;
 }

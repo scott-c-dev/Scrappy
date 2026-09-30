@@ -1,14 +1,20 @@
 /* Shared domain types — used by both the client (Scrappy.tsx) and the server
    route handlers, so the AI proxy and the UI agree on one shape. */
 
-/* Three-tier freshness (PRD §3): `going bad` (rescue first), `use soon`
-   (light prompt), or null (fresh, unlabelled). */
-export type FreshnessTag = "going bad" | "use soon" | null;
+/* Freshness as the user described it: `going bad` (rescue first), `use soon`,
+   `fresh`, or null — "not sure", the default when they didn't say. We never
+   show a guess; for not-sure items the recipe step falls back on how quickly
+   that food usually spoils. */
+export type FreshnessTag = "going bad" | "use soon" | "fresh" | null;
 
 export interface Ingredient {
   id: string;
   name: string;
-  qty: string;
+  /* null = "as needed" (no amount given). */
+  amount: number | null;
+  /* "pcs" for a plain count, a standard unit (g, lb, cups…), or a kitchen
+     word the user said (bunch, block, bowl…). See lib/units.ts. */
+  unit: string;
   tag: FreshnessTag;
 }
 

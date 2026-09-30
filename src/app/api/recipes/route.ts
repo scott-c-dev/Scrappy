@@ -4,12 +4,15 @@ import { claude, MODEL } from "@/lib/server/claude";
 import { mockAI, mockDelay, mockDishes, mockSwap } from "@/lib/server/mock";
 import { allowedSet, normalize, STAPLES } from "@/lib/staples";
 import type { Dish, Ingredient, Prefs, Step } from "@/lib/types";
+import { amountText, type UnitSystem } from "@/lib/units";
 
 export const runtime = "nodejs";
 
 interface Body {
   ingredients: Ingredient[];
   prefs: Prefs;
+  /* Which units to write recipe quantities in. */
+  units?: UnitSystem;
   /* Swap mode: replace this dish with one alternative... */
   swapDishId?: string;
   /* ...while still rescuing these expiring ingredients (§2). */
@@ -76,13 +79,15 @@ function ingredientLines(ings: Ingredient[]): string {
           ? " [GOING BAD — rescue first]"
           : i.tag === "use soon"
             ? " [use soon]"
-            : "";
-      return `- ${i.name} (${i.qty})${tier}`;
+            : i.tag === "fresh"
+              ? " [fresh]"
+              : " [freshness not stated]";
+      return `- ${i.name} (${amountText(i)})${tier}`;
     })
     .join("\n");
 }
 
-function systemPrompt(prefs: Prefs): string {
+function systemPrompt(prefs: Prefs, units: UnitSystem): string {
   return `You are Scrappy, a recipe generator whose entire job is to cook what is about to go bad using ONLY what the user already has — no shopping trip.
 
 HARD CONSTRAINT (non-negotiable):
@@ -91,8 +96,13 @@ HARD CONSTRAINT (non-negotiable):
 - Every ingredient named in a recipe's "uses" list MUST be either in the user's list or in the whitelist.
 
 WASTE-PREVENTION PRIORITY (the whole point):
-- Build dishes around ingredients marked [GOING BAD] first, then [use soon], then fresh.
+- Build dishes around ingredients marked [GOING BAD] first, then [use soon], then the rest.
+- For ingredients marked [freshness not stated], judge by how quickly that food usually spoils (leafy greens, herbs, berries, fish and dairy go before rice, potatoes or onions) and favour the more perishable ones.
 - Each dish's "rescue" array = the GOING BAD / use-soon ingredients that dish actually uses up. It must be a subset of "uses".
+
+AMOUNTS:
+- Respect the amounts listed; don't use more than the user has. "as needed" means the amount wasn't given — use a sensible quantity.
+- Write quantities in the steps in ${units === "imperial" ? "imperial units (oz, lb, cups, tbsp, tsp, °F)" : "metric units (g, kg, ml, L, °C)"}.
 
 Per dish provide:
 - name: an appetising dish name.
@@ -121,7 +131,7 @@ Design ${count} ${count === 1 ? "dish" : "distinct dishes"} under the hard const
     model: MODEL,
     max_tokens: 8000,
     thinking: { type: "adaptive" },
-    system: systemPrompt(body.prefs),
+    system: systemPrompt(body.prefs, body.units === "imperial" ? "imperial" : "metric"),
     output_config: { format: { type: "json_schema", schema: SCHEMA } },
     messages: [{ role: "user", content: userText }],
   });

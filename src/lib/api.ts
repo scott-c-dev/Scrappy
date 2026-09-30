@@ -3,6 +3,7 @@
    fallback (per the build decision). */
 
 import type { Dish, Ingredient, Prefs } from "./types";
+import type { UnitSystem } from "./units";
 
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -40,6 +41,7 @@ export function parsePref(
 export function generateRecipes(input: {
   ingredients: Ingredient[];
   prefs: Prefs;
+  units: UnitSystem;
 }): Promise<{ dishes: Dish[] }> {
   return postJSON("/api/recipes", input);
 }
@@ -49,6 +51,7 @@ export function generateRecipes(input: {
 export function swapDish(input: {
   ingredients: Ingredient[];
   prefs: Prefs;
+  units: UnitSystem;
   swapDishId: string;
   keepRescue: string[];
   exclude: string[];

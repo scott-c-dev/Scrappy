@@ -11,6 +11,9 @@ import { PrefSheet } from "./components/PrefSheet";
 import { FinishSheet } from "./components/FinishSheet";
 import { ErrorToast } from "./components/ErrorToast";
 import { SwapSheet } from "./components/SwapSheet";
+import { AdjustSheet } from "./components/AdjustSheet";
+import { SettingsScreen } from "./components/SettingsScreen";
+import { onTheClock } from "./components/freshness";
 import { voiceErrorView } from "./voiceErrors";
 
 export default function Scrappy() {
@@ -26,7 +29,9 @@ export default function Scrappy() {
     onPhoto,
     typedInput,
     removeIng,
-    cycleFreshness,
+    openAdjust,
+    closeAdjust,
+    updateIng,
     openPref,
     pickPref,
     closePref,
@@ -40,6 +45,8 @@ export default function Scrappy() {
     setCookDish,
     nextStep,
     prevStep,
+    openSettings,
+    setUnits,
     back,
     restart,
     setState,
@@ -48,7 +55,7 @@ export default function Scrappy() {
   const goingBad = s.ingredients
     .filter((i) => i.tag === "going bad")
     .map((i) => i.name);
-  const rescueCount = s.ingredients.filter((i) => i.tag !== null).length;
+  const rescueCount = s.ingredients.filter((i) => onTheClock(i.tag)).length;
   const finishText = goingBad.length
     ? "You used up your " +
       goingBad.join(", ").toLowerCase() +
@@ -56,13 +63,14 @@ export default function Scrappy() {
       " before they turned."
     : "Good cooking.";
 
-  const progressStep = { input: 0, confirm: 1, dishes: 2, cook: 3 }[s.screen];
+  const progressStep = { input: 0, settings: 0, confirm: 1, dishes: 2, cook: 3 }[s.screen];
   const showBack = s.screen !== "input";
   const voiceError =
     s.voiceError && s.voiceContext
       ? voiceErrorView(s.voiceError, s.voiceContext, s.errorKeptText, s.backOnline)
       : null;
   const swapSheetDish = s.dishes.find((d) => d.id === s.swapSheetId);
+  const adjusting = s.ingredients.find((i) => i.id === s.adjustId);
 
   return (
     <div
@@ -100,19 +108,38 @@ export default function Scrappy() {
                 "font-family:var(--font-display);font-weight:800;font-size:20px;color:var(--ink)",
               )}
             >
-              Scrappy
+              {s.screen === "settings" ? "Settings" : "Scrappy"}
             </span>
           </div>
-          <div style={css("display:flex;gap:5px;align-items:center")}>
-            {[0, 1, 2, 3].map((i) => (
-              <span
-                key={i}
+          <div style={css("display:flex;align-items:center;gap:12px")}>
+            <div
+              style={css(
+                "display:flex;gap:5px;align-items:center;opacity:" +
+                  (s.screen === "settings" ? "0" : "1"),
+              )}
+            >
+              {[0, 1, 2, 3].map((i) => (
+                <span
+                  key={i}
+                  style={css(
+                    "width:7px;height:7px;border-radius:50%;background:" +
+                      (i <= progressStep ? "var(--accent)" : "var(--line)"),
+                  )}
+                />
+              ))}
+            </div>
+            {/* Settings only from home: units shouldn't change mid-flow. */}
+            {s.screen === "input" && (
+              <button
+                onClick={openSettings}
+                aria-label="Settings"
                 style={css(
-                  "width:7px;height:7px;border-radius:50%;background:" +
-                    (i <= progressStep ? "var(--accent)" : "var(--line)"),
+                  "cursor:pointer;border:1px solid var(--line);background:var(--card);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);flex:none",
                 )}
-              />
-            ))}
+              >
+                <GearIcon />
+              </button>
+            )}
           </div>
         </div>
 
@@ -130,14 +157,16 @@ export default function Scrappy() {
               onType={typedInput}
             />
           )}
+          {s.screen === "settings" && (
+            <SettingsScreen units={s.units} onUnits={setUnits} />
+          )}
           {s.screen === "confirm" && (
             <ConfirmScreen
               ingredients={s.ingredients}
               prefs={s.prefs}
-              showTagHint={!s.tagTouched}
               onAddVoice={() => startVoice("add")}
               onRemove={removeIng}
-              onCycleFreshness={cycleFreshness}
+              onAdjust={openAdjust}
               onOpenPref={openPref}
               onGenerate={generate}
             />
@@ -188,6 +217,15 @@ export default function Scrappy() {
             onErrorAction={voiceErrorAction}
           />
         )}
+        {adjusting && (
+          <AdjustSheet
+            key={adjusting.id}
+            ingredient={adjusting}
+            units={s.units}
+            onChange={(patch) => updateIng(adjusting.id, patch)}
+            onClose={closeAdjust}
+          />
+        )}
         {swapSheetDish && (
           <SwapSheet
             dishName={swapSheetDish.name}
@@ -223,5 +261,23 @@ export default function Scrappy() {
         )}
       </div>
     </div>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
   );
 }

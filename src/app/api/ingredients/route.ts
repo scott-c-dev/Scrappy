@@ -7,8 +7,8 @@ import type { FreshnessTag, Ingredient } from "@/lib/types";
 export const runtime = "nodejs";
 
 /* Structured-output schema: Claude must return exactly this shape. `freshness`
-   is a string enum (JSON-schema-friendly) that we map back to the nullable
-   FreshnessTag below. */
+   is a string enum (JSON-schema-friendly) mapped back to the nullable
+   FreshnessTag below; `hasAmount` says whether `amount` means anything. */
 const SCHEMA: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
@@ -20,10 +20,15 @@ const SCHEMA: Record<string, unknown> = {
         additionalProperties: false,
         properties: {
           name: { type: "string" },
-          qty: { type: "string" },
-          freshness: { type: "string", enum: ["going bad", "use soon", "fresh"] },
+          hasAmount: { type: "boolean" },
+          amount: { type: "number" },
+          unit: { type: "string" },
+          freshness: {
+            type: "string",
+            enum: ["going bad", "use soon", "fresh", "not sure"],
+          },
         },
-        required: ["name", "qty", "freshness"],
+        required: ["name", "hasAmount", "amount", "unit", "freshness"],
       },
     },
   },
@@ -34,11 +39,15 @@ const SYSTEM = `You extract a kitchen ingredient list for an anti-food-waste coo
 
 From the user's spoken description and/or a fridge photo, list each distinct edible ingredient with:
 - name: a short, title-case food name (e.g. "Tomatoes", "Leftover rice").
-- qty: a rough amount in the user's own words ("2", "half a cabbage", "1 block", "as needed"). Never invent precise weights.
-- freshness, using exactly one of three tiers:
-  - "going bad": the user said it is spoiling/wilting/expiring, OR the photo clearly shows it past its best (browning, wilting, soft). These get rescued first.
-  - "use soon": leftovers or perishables that should be eaten soon but are still fine (e.g. "leftover rice", cut/opened items).
-  - "fresh": anything with no spoilage signal. This is the default when unsure.
+- amount and unit, only as the user stated them — never invent an amount:
+  - hasAmount: false when no amount was given (then amount = 0 and unit = "pcs"); true otherwise.
+  - amount: a number ("half" = 0.5, "a couple" = 2, "a dozen" = 12).
+  - unit: "pcs" for a plain count ("3 eggs", "half a cabbage"); otherwise the unit they used, as one of g, kg, ml, L, oz, lb, cups, or a singular kitchen word (bunch, clove, can, slice, block, bowl, head, pack…). Keep their unit even if it mixes metric and imperial; don't convert.
+- freshness — only what the user told you (or what the photo clearly shows). Don't guess from the kind of food:
+  - "going bad": they said it's spoiling/wilting/expiring, or the photo clearly shows it past its best.
+  - "use soon": leftovers, opened or cut items, or vague hints like "bought last week" or "a bit old".
+  - "fresh": they said it's fresh or just bought.
+  - "not sure": they said nothing about its freshness. This is the default.
 
 Only list ingredients actually mentioned or visibly present. Do not add staples (oil, salt, etc.) or anything not stated/shown.`;
 
@@ -103,16 +112,23 @@ export async function POST(req: Request) {
       res.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ??
       "{}";
     const parsed = JSON.parse(text) as {
-      ingredients: { name: string; qty: string; freshness: string }[];
+      ingredients: {
+        name: string;
+        hasAmount: boolean;
+        amount: number;
+        unit: string;
+        freshness: string;
+      }[];
     };
 
     const tagFor = (f: string): FreshnessTag =>
-      f === "going bad" ? "going bad" : f === "use soon" ? "use soon" : null;
+      f === "going bad" || f === "use soon" || f === "fresh" ? f : null;
 
     const ingredients: Ingredient[] = parsed.ingredients.map((it, i) => ({
       id: `ing-${i}-${it.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
       name: it.name,
-      qty: it.qty,
+      amount: it.hasAmount && it.amount > 0 ? it.amount : null,
+      unit: it.unit.trim() || "pcs",
       tag: tagFor(it.freshness),
     }));
 

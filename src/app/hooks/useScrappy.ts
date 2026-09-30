@@ -15,9 +15,10 @@ import {
   type VoiceSession,
 } from "@/lib/voice";
 import { PREF_TITLES, type PrefKey } from "@/lib/prefs";
+import { defaultUnitSystem, type UnitSystem } from "@/lib/units";
 import { isPref, type VoiceErrorAction, type VoiceErrorKind } from "../voiceErrors";
 
-export type Screen = "input" | "confirm" | "dishes" | "cook";
+export type Screen = "input" | "settings" | "confirm" | "dishes" | "cook";
 /* review: showing what was heard (or a text box) before it's sent to the LLM. */
 export type VoiceState = "idle" | "listening" | "processing" | "review" | "error";
 export type VoiceContext =
@@ -49,8 +50,10 @@ export interface ScrappyState {
   /* The connection came back while the offline message was showing. */
   backOnline: boolean;
   ingredients: Ingredient[];
-  /* The user has changed a freshness tag, so the tag hint can go. */
-  tagTouched: boolean;
+  /* Ingredient whose adjust card (amount, unit, freshness) is open. */
+  adjustId: string | null;
+  /* Which units the adjust card offers and recipes are written in. */
+  units: UnitSystem;
   prefs: Prefs;
   dishes: Dish[];
   dishesLoading: boolean;
@@ -86,7 +89,8 @@ const INITIAL: ScrappyState = {
   errorKeptText: false,
   backOnline: false,
   ingredients: [],
-  tagTouched: false,
+  adjustId: null,
+  units: "metric",
   prefs: { servings: 2, courses: 3, diet: "No restrictions", allergy: "None" },
   dishes: [],
   dishesLoading: false,
@@ -125,12 +129,30 @@ const typedTitle = (ctx: VoiceContext) =>
 
 const HEARD_TITLE = "Here’s what I heard";
 
+const UNITS_KEY = "scrappy.units";
+
+// The unit system is remembered on this device; until it's set, it follows
+// the phone's region.
+function savedUnits(): UnitSystem {
+  if (typeof window === "undefined") return "metric";
+  try {
+    const saved = localStorage.getItem(UNITS_KEY);
+    if (saved === "metric" || saved === "imperial") return saved;
+  } catch {}
+  return defaultUnitSystem();
+}
+
 // A failed request is the connection's fault if the browser says it's offline.
 const requestFailure = (): VoiceErrorKind =>
   navigator.onLine ? "service" : "offline";
 
 export function useScrappy() {
-  const [state, setRaw] = useState<ScrappyState>(INITIAL);
+  // Nothing on the first screen shows units, so reading them here can't make
+  // the server and browser render differently.
+  const [state, setRaw] = useState<ScrappyState>(() => ({
+    ...INITIAL,
+    units: savedUnits(),
+  }));
 
   // Mirror of the latest committed state so async callbacks can read fresh
   // values without being re-bound on every render.
@@ -173,6 +195,15 @@ export function useScrappy() {
       voiceRef.current?.cancel();
     };
   }, []);
+
+  const setUnits = (units: UnitSystem) => {
+    try {
+      localStorage.setItem(UNITS_KEY, units);
+    } catch {}
+    setState({ units });
+  };
+
+  const openSettings = () => setState({ screen: "settings" });
 
   // Let the offline message say so when the connection comes back.
   useEffect(() => {
@@ -217,6 +248,7 @@ export function useScrappy() {
       const { dish: alt } = await swapDish({
         ingredients: stateRef.current.ingredients,
         prefs: stateRef.current.prefs,
+        units: stateRef.current.units,
         swapDishId: id,
         keepRescue: dish.rescue,
         exclude: stateRef.current.dishes.map((d) => d.name),
@@ -461,25 +493,17 @@ export function useScrappy() {
   // ── Ingredients (confirm screen) ────────────────────────────────────────
 
   const removeIng = (id: string) =>
-    setState((s) => ({ ingredients: s.ingredients.filter((i) => i.id !== id) }));
-
-  // Cycles three-tier freshness: fresh → use soon → going bad → fresh.
-  const cycleFreshness = (id: string) =>
     setState((s) => ({
-      tagTouched: true,
-      ingredients: s.ingredients.map((i) =>
-        i.id === id
-          ? {
-              ...i,
-              tag:
-                i.tag === null
-                  ? "use soon"
-                  : i.tag === "use soon"
-                    ? "going bad"
-                    : null,
-            }
-          : i,
-      ),
+      ingredients: s.ingredients.filter((i) => i.id !== id),
+      adjustId: s.adjustId === id ? null : s.adjustId,
+    }));
+
+  const openAdjust = (id: string) => setState({ adjustId: id });
+  const closeAdjust = () => setState({ adjustId: null });
+
+  const updateIng = (id: string, patch: Partial<Ingredient>) =>
+    setState((s) => ({
+      ingredients: s.ingredients.map((i) => (i.id === id ? { ...i, ...patch } : i)),
     }));
 
   // ── Preferences ─────────────────────────────────────────────────────────
@@ -497,6 +521,7 @@ export function useScrappy() {
       const { dishes } = await generateRecipes({
         ingredients: stateRef.current.ingredients,
         prefs: stateRef.current.prefs,
+        units: stateRef.current.units,
       });
       setState({ dishes, dishesLoading: false });
     } catch {
@@ -610,6 +635,7 @@ export function useScrappy() {
   const back = () => {
     const sc = stateRef.current.screen;
     const map: Partial<Record<Screen, Screen>> = {
+      settings: "input",
       confirm: "input",
       dishes: "confirm",
       cook: "dishes",
@@ -621,7 +647,7 @@ export function useScrappy() {
     turn.current++;
     voiceRef.current?.cancel();
     clearCt();
-    setRaw(INITIAL);
+    setRaw({ ...INITIAL, units: stateRef.current.units });
   };
 
   return {
@@ -638,7 +664,9 @@ export function useScrappy() {
     onPhoto,
     typedInput,
     removeIng,
-    cycleFreshness,
+    openAdjust,
+    closeAdjust,
+    updateIng,
     // Preferences
     openPref,
     pickPref,
@@ -655,6 +683,9 @@ export function useScrappy() {
     setCookDish,
     nextStep,
     prevStep,
+    // Settings
+    openSettings,
+    setUnits,
     // Navigation
     back,
     restart,

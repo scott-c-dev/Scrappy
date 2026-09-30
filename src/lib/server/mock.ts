@@ -72,25 +72,59 @@ const NUMBER_WORDS: Record<string, number> = {
 
 const GOING_BAD = /\b(wilt|going bad|gone soft|soft|expir|old|brown|last week|turning|about to go)/;
 const USE_SOON = /\b(leftover|opened|half[- ]used|use soon|yesterday)/;
+const FRESH = /\b(fresh|just bought|new)\b/;
 
-function qtyFrom(clause: string, food: RegExp): string {
-  if (/\bhalf\b/.test(clause)) return "½";
-  const words = clause.split(/\s+/);
-  const at = words.findIndex((w) => food.test(w));
-  // Look at the few words just before the food name ("I got two tomatoes").
-  for (let i = at - 1; i >= Math.max(0, at - 3); i--) {
-    const w = words[i];
-    if (/^\d+$/.test(w)) return w;
-    if (w in NUMBER_WORDS && w !== "a" && w !== "an") return String(NUMBER_WORDS[w]);
+// Spoken unit → the unit we store (see lib/units.ts).
+const UNIT_ALIASES: [RegExp, string][] = [
+  [/^(g|grams?)$/, "g"],
+  [/^(kg|kilos?|kilograms?)$/, "kg"],
+  [/^(ml|millilit(er|re)s?)$/, "ml"],
+  [/^(l|lit(er|re)s?)$/, "L"],
+  [/^(oz|ounces?)$/, "oz"],
+  [/^(lbs?|pounds?)$/, "lb"],
+  [/^cups?$/, "cups"],
+  [/^(bunch|bunches)$/, "bunch"],
+  [/^(clove|can|slice|block|bowl|head|pack|bag)s?$/, ""],
+];
+
+function numberFrom(word: string): number | null {
+  if (/^\d+(\.\d+)?$/.test(word)) return Number(word);
+  if (word === "half") return 0.5;
+  return word in NUMBER_WORDS ? NUMBER_WORDS[word] : null;
+}
+
+function unitFrom(word: string): string | null {
+  for (const [re, unit] of UNIT_ALIASES) {
+    if (re.test(word)) return unit || word.replace(/s$/, "");
   }
-  if (/\b(some|a bit of|a little)\b/.test(clause)) return "some";
-  return "as needed";
+  return null;
+}
+
+// "500 g of chicken" → 500 g; "two tomatoes" → 2 pcs; "half a cabbage" → ½ pcs.
+function amountFrom(clause: string, food: RegExp): Pick<Ingredient, "amount" | "unit"> {
+  const words = clause.split(/\s+/).filter(Boolean);
+  const at = words.findIndex((w) => food.test(w));
+  const end = at === -1 ? words.length : at;
+  for (let i = 0; i < end - 1; i++) {
+    const n = numberFrom(words[i]);
+    const unit = unitFrom(words[i + 1]);
+    if (n != null && unit) return { amount: n, unit };
+  }
+  if (/\bhalf\b/.test(clause)) return { amount: 0.5, unit: "pcs" };
+  // Look at the few words just before the food name ("I got two tomatoes").
+  for (let i = end - 1; i >= Math.max(0, end - 3); i--) {
+    const w = words[i];
+    const n = w === "a" || w === "an" ? null : numberFrom(w);
+    if (n != null) return { amount: n, unit: "pcs" };
+  }
+  return { amount: null, unit: "pcs" };
 }
 
 function tagFrom(clause: string): FreshnessTag {
   if (GOING_BAD.test(clause)) return "going bad";
   if (USE_SOON.test(clause)) return "use soon";
-  return null;
+  if (FRESH.test(clause)) return "fresh";
+  return null; // not sure
 }
 
 export function mockIngredients(transcript: string, hasImage: boolean): Ingredient[] {
@@ -107,16 +141,16 @@ export function mockIngredients(transcript: string, hasImage: boolean): Ingredie
       out.push({
         id: `ing-${out.length}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
         name,
-        qty: qtyFrom(clause.trim(), re),
+        ...amountFrom(clause.trim(), re),
         tag: name === "Leftover rice" ? "use soon" : tagFrom(clause),
       });
     }
   }
   if (!out.length && hasImage) {
     return [
-      { id: "ing-0-cabbage", name: "Cabbage", qty: "½", tag: "going bad" },
-      { id: "ing-1-eggs", name: "Eggs", qty: "3", tag: null },
-      { id: "ing-2-tomatoes", name: "Tomatoes", qty: "2", tag: "use soon" },
+      { id: "ing-0-cabbage", name: "Cabbage", amount: 0.5, unit: "pcs", tag: "going bad" },
+      { id: "ing-1-eggs", name: "Eggs", amount: 3, unit: "pcs", tag: null },
+      { id: "ing-2-tomatoes", name: "Tomatoes", amount: 2, unit: "pcs", tag: "use soon" },
     ];
   }
   return out;
@@ -187,8 +221,13 @@ function mockDish(ingredients: Ingredient[], style: number, rescue: string[], id
   };
 }
 
+const onTheClock = (ingredients: Ingredient[]) =>
+  ingredients
+    .filter((i) => i.tag === "going bad" || i.tag === "use soon")
+    .map((i) => i.name);
+
 export function mockDishes(ingredients: Ingredient[], count: number): Dish[] {
-  const rescue = ingredients.filter((i) => i.tag !== null).map((i) => i.name);
+  const rescue = onTheClock(ingredients);
   return Array.from({ length: count }, (_, i) => mockDish(ingredients, i, rescue, i));
 }
 
@@ -200,7 +239,7 @@ export function mockSwap(
 ): Dish {
   const rescue = keepRescue.length
     ? keepRescue
-    : ingredients.filter((i) => i.tag !== null).map((i) => i.name);
+    : onTheClock(ingredients);
   // First style whose dish name isn't already on screen.
   for (let i = 0; i < STYLES.length * 2; i++) {
     const d = mockDish(ingredients, i, rescue, i + exclude.length, note);

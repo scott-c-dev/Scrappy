@@ -4,6 +4,7 @@ import type { Ingredient } from "@/lib/types";
 import {
   fitsUnit,
   formatNumber,
+  isCustomUnit,
   KITCHEN_UNITS,
   otherSystem,
   snapAmount,
@@ -122,6 +123,9 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
   if (moreUnits) unitRow.push(...SYSTEM_UNITS[other]);
   else if (SYSTEM_UNITS[other].includes(ing.unit)) unitRow.push(ing.unit);
   unitRow.push(...KITCHEN_UNITS);
+  // A custom unit the user said stays on offer even after switching away.
+  const said = isCustomUnit(ing.saidUnit) ? ing.saidUnit : null;
+  if (said && !unitRow.includes(said)) unitRow.push(said);
   if (!unitRow.includes(ing.unit)) unitRow.push(ing.unit);
 
   const unitText =

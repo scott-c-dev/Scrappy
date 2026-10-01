@@ -138,10 +138,12 @@ export function mockIngredients(transcript: string, hasImage: boolean): Ingredie
       // "leftover rice" also matches "rice"; keep only the more specific one.
       if (name === "Rice" && seen.has("Leftover rice")) continue;
       seen.add(name);
+      const amount = amountFrom(clause.trim(), re);
       out.push({
         id: `ing-${out.length}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
         name,
-        ...amountFrom(clause.trim(), re),
+        ...amount,
+        saidUnit: amount.unit,
         tag: name === "Leftover rice" ? "use soon" : tagFrom(clause),
       });
     }

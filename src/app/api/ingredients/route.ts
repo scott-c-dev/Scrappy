@@ -129,6 +129,7 @@ export async function POST(req: Request) {
       name: it.name,
       amount: it.hasAmount && it.amount > 0 ? it.amount : null,
       unit: it.unit.trim() || "pcs",
+      saidUnit: it.unit.trim() || "pcs",
       tag: tagFor(it.freshness),
     }));
 

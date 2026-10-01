@@ -33,13 +33,22 @@ const SPECS: Record<string, UnitSpec> = {
   oz: { step: 1, max: 64, def: 8, label: 4, quick: [4, 8, 12, 16] },
   lb: { step: 0.25, max: 10, def: 1, label: 1, quick: [0.5, 1, 2] },
   cups: { step: 0.25, max: 8, def: 1, label: 1, quick: [0.5, 1, 2, 3] },
+  bunch: { step: 1, max: 20, def: 1, label: 2, quick: [1, 2, 3, 4] },
+  clove: { step: 1, max: 20, def: 1, label: 2, quick: [1, 2, 3, 4, 6] },
+  can: { step: 1, max: 20, def: 1, label: 2, quick: [1, 2, 3, 4] },
+  slice: { step: 1, max: 20, def: 1, label: 2, quick: [1, 2, 3, 4, 6] },
 };
 
-// Kitchen words, including ones the user said that we don't list (block, bowl…).
-const COUNT_SPEC: UnitSpec = { step: 1, max: 20, def: 1, label: 2, quick: [1, 2, 3, 4] };
+// A unit the user said that we don't list (block, bowl, head…): half a block
+// is a real amount, so it goes in halves.
+const CUSTOM_SPEC: UnitSpec = { step: 0.5, max: 20, def: 1, label: 1, quick: [0.5, 1, 2, 3] };
 
 export function unitSpec(unit: string): UnitSpec {
-  return SPECS[unit] ?? COUNT_SPEC;
+  return SPECS[unit] ?? CUSTOM_SPEC;
+}
+
+export function isCustomUnit(unit: string | undefined): unit is string {
+  return !!unit && unit !== "pcs" && !SPECS[unit];
 }
 
 export function otherSystem(system: UnitSystem): UnitSystem {
@@ -82,7 +91,7 @@ export function formatNumber(v: number): string {
 export function unitWord(unit: string, v: number): string {
   if (unit === "pcs") return "";
   if (unit === "cups") return v > 1 ? "cups" : "cup";
-  if (SPECS[unit]) return unit;
+  if (SPECS[unit] && !KITCHEN_UNITS.includes(unit)) return unit;
   if (v <= 1) return unit;
   return /(sh|ch|s|x|z)$/.test(unit) ? `${unit}es` : `${unit}s`;
 }

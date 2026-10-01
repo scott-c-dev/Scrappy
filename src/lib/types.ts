@@ -15,6 +15,9 @@ export interface Ingredient {
   /* "pcs" for a plain count, a standard unit (g, lb, cups…), or a kitchen
      word the user said (bunch, block, bowl…). See lib/units.ts. */
   unit: string;
+  /* The unit as originally said, so a custom one ("block") stays on offer
+     after switching to another unit. */
+  saidUnit?: string;
   tag: FreshnessTag;
 }
 

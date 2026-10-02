@@ -13,6 +13,7 @@ import {
   unitWord,
   type UnitSystem,
 } from "@/lib/units";
+import { hapticTick } from "@/lib/haptics";
 import { TIERS } from "./freshness";
 
 interface AdjustSheetProps {
@@ -53,6 +54,10 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
   const pendingSync = useRef<"instant" | "smooth" | null>("instant");
   const scrollTarget = useRef<number | null>(null);
   const giveUpTimer = useRef<number | undefined>(undefined);
+  // The mark the ruler is showing. Only moving to a different mark is a
+  // choice: with "As needed" the ruler parks on the default mark, and a stray
+  // scroll event there (snap settling, duplicates) must not pick it.
+  const shownMark = useRef(0);
   // The user grabbing the ruler interrupts our scroll; from then on it's theirs.
   const onUserScroll = () => {
     scrollTarget.current = null;
@@ -64,7 +69,8 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
     if (!el || !mode) return;
     pendingSync.current = null;
     const v = ing.amount ?? spec.def;
-    const left = Math.round((v - spec.step) / spec.step) * TICK;
+    shownMark.current = Math.round((v - spec.step) / spec.step);
+    const left = shownMark.current * TICK;
     // Already there: no scroll event will come to clear the target.
     if (Math.abs(el.scrollLeft - left) < 1) return;
     scrollTarget.current = left;
@@ -88,8 +94,14 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
       return;
     }
     const idx = Math.round(e.currentTarget.scrollLeft / TICK);
+    if (idx === shownMark.current) return;
+    shownMark.current = idx;
     const v = Math.min(spec.max, round2(spec.step + idx * spec.step));
-    if (v !== ing.amount) onChange({ amount: v });
+    if (v === ing.amount) return;
+    // A tick per value, a firmer one on the labelled marks, like a dial.
+    const major = Math.abs(v / spec.label - Math.round(v / spec.label)) < 1e-6;
+    hapticTick(major ? "strong" : "light");
+    onChange({ amount: v });
   };
 
   const setAmount = (v: number | null) => {

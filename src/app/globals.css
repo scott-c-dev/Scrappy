@@ -1,32 +1,104 @@
 @import "tailwindcss";
 
-*{box-sizing:border-box}
-html,body{margin:0;padding:0}
-
 /* ── Scrappy theme tokens ─────────────────────────────────────────────
    Single warm "garden" palette (PRD §5: ship one theme). Freshness runs
    amber (going bad, "helping you", not a red warning) → honey (use soon) →
-   green (fresh). */
+   green (fresh). These raw names are the design handoff's vocabulary; the
+   @theme below exposes them as Tailwind utilities (bg-card, text-ink…). */
 .scrappy-root{
   --page:#DDE3CF; --paper:#F2F3E4; --card:#FCFBEF; --ink:#28311E; --ink-soft:#505A3F; --muted:#8A9172;
   --line:#E2E6D1; --accent:#5E8C3F; --accent-ink:#FFFFFF; --accent-soft:#DCE7C5; --rescue:#C0791B;
   --rescue-bg:#F5EBC8; --fresh:#3F7A46; --fresh-bg:#E0EBCC; --soon:#D3A22B; --soon-ink:#86650C; --soon-bg:#F8EFCB; --radius:22px; --radius-sm:14px;
   --shadow:0 18px 40px -20px rgba(40,55,25,.30); --shadow-sm:0 6px 18px -10px rgba(40,55,25,.30);
-  --font-display:'Bricolage Grotesque',sans-serif; --font-body:'Hanken Grotesk',sans-serif;
-  --font-label:'Hanken Grotesk',sans-serif; --label-tracking:.05em; --label-transform:uppercase;
+  --label-tracking:.05em; --label-transform:uppercase;
+}
+
+/* Only these exist: Tailwind's default palette, radii, shadows, type sizes
+   and animations are cleared so everything stays on the design's tokens. */
+@theme inline {
+  --color-*: initial;
+  --color-page: var(--page);
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-rescue: var(--rescue);
+  --color-rescue-bg: var(--rescue-bg);
+  --color-fresh: var(--fresh);
+  --color-fresh-bg: var(--fresh-bg);
+  --color-soon: var(--soon);
+  --color-soon-ink: var(--soon-ink);
+  --color-soon-bg: var(--soon-bg);
+  --color-scrim: rgba(30,20,12,.34);
+
+  --radius-*: initial;
+  --radius-tile: var(--radius-sm);
+  --radius-card: var(--radius);
+  --radius-sheet: 26px;
+
+  --shadow-*: initial;
+  --shadow-raised: var(--shadow-sm);
+  --shadow-sheet: 0 -10px 40px rgba(0,0,0,.18);
+
+  --tracking-label: var(--label-tracking);
+}
+
+@theme {
+  /* 1 unit = 1px, so p-13 / gap-10 / w-34 read as the design's pixels. */
+  --spacing: 1px;
+
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-body: 'Hanken Grotesk', sans-serif;
+  --font-label: 'Hanken Grotesk', sans-serif;
+
+  /* Body text sizes, named by pixels. */
+  --text-*: initial;
+  --text-11: 11px;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-15: 15px;
+  --text-16: 16px;
+
+  --animate-*: initial;
+  --animate-spin: spin .8s linear infinite;
+  --animate-wave: wave .9s ease-in-out infinite;
+  --animate-mic-pulse: mic-pulse 2.4s infinite;
+  --animate-shimmer: shimmer 1.4s infinite;
+  --animate-risein: risein .4s ease;
+  --animate-slidein: slidein .28s cubic-bezier(.2,.8,.2,1);
+  --animate-sheetin: sheetin .32s cubic-bezier(.2,.8,.2,1);
 }
 
 @keyframes wave{0%,100%{height:10px}50%{height:30px}}
-@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 30%,transparent)}70%{box-shadow:0 0 0 20px transparent}100%{box-shadow:0 0 0 0 transparent}}
+@keyframes mic-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 30%,transparent)}70%{box-shadow:0 0 0 20px transparent}100%{box-shadow:0 0 0 0 transparent}}
 @keyframes shimmer{0%{transform:translateX(-130%)}100%{transform:translateX(230%)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes risein{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes slidein{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
 @keyframes sheetin{from{transform:translateY(100%)}to{transform:none}}
 
-.noscroll::-webkit-scrollbar{display:none}
-.noscroll{scrollbar-width:none}
+/* Section labels ("AMOUNT", "COOKING"…): the theme decides tracking and case. */
+@utility label-caps {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: var(--label-tracking);
+  text-transform: var(--label-transform);
+}
+
+@utility noscroll {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
 
 /* Tappable cards that shrink slightly while pressed. */
-.press{transition:transform .12s}
-.press:active{transform:scale(.96)}
+@utility press {
+  transition: transform .12s;
+  &:active { transform: scale(.96); }
+}

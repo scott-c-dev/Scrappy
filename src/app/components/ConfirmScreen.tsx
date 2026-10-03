@@ -1,9 +1,10 @@
-import { css } from "@/lib/css";
+import { cx } from "@/lib/cx";
 import type { Ingredient, Prefs } from "@/lib/types";
 import type { PrefKey } from "@/lib/prefs";
 import { amountText } from "@/lib/units";
 import { onTheClock, tierOf } from "./freshness";
 import { Mic } from "./Mic";
+import { Chip, PrimaryButton, StickyBar } from "./ui";
 
 interface ConfirmScreenProps {
   ingredients: Ingredient[];
@@ -28,14 +29,13 @@ export function ConfirmScreen({
   // Only freshness the user stated gets a label; "not sure" shows nothing.
   const enriched = ingredients.map((i) => {
     const tier = tierOf(i.tag);
-    const chipStyle =
-      "cursor:pointer;user-select:none;display:flex;align-items:flex-start;gap:10px;padding:9px 11px 9px 13px;border-radius:14px;" +
-      (i.tag === "going bad"
-        ? "background:var(--rescue-bg);border:1.5px solid var(--rescue);"
+    const chipLook =
+      i.tag === "going bad"
+        ? "border-[1.5px] border-rescue bg-rescue-bg"
         : i.tag === "use soon"
-          ? "background:var(--card);border:1.5px solid var(--soon);"
-          : "background:var(--card);border:1px solid var(--line);");
-    return { ...i, tier, chipStyle, amount: amountText(i) };
+          ? "border-[1.5px] border-soon bg-card"
+          : "border border-line bg-card";
+    return { ...i, tier, chipLook, amount: amountText(i) };
   });
 
   const urgent = ingredients
@@ -63,36 +63,18 @@ export function ConfirmScreen({
 
   return (
     <>
-      <div
-        style={css(
-          "padding:10px 18px 8px;display:flex;flex-direction:column;gap:15px;animation:risein .4s ease",
-        )}
-      >
+      <div className="flex animate-risein flex-col gap-15 px-18 pt-10 pb-8">
         <div>
-          <span
-            style={css(
-              "font-family:var(--font-label);font-size:11px;letter-spacing:var(--label-tracking);text-transform:var(--label-transform);color:var(--accent);font-weight:700",
-            )}
-          >
-            Here&apos;s what I heard
-          </span>
-          <h2
-            style={css(
-              "font-family:var(--font-display);font-weight:800;font-size:27px;margin:4px 0 0;color:var(--ink)",
-            )}
-          >
+          <span className="label-caps text-accent">Here&apos;s what I heard</span>
+          <h2 className="mt-4 font-display text-[27px] font-extrabold text-ink">
             Sound about right?
           </h2>
-          <p
-            style={css(
-              "font-size:13.5px;color:var(--ink-soft);margin:6px 0 0;line-height:1.45",
-            )}
-          >
+          <p className="mt-6 text-[13.5px] leading-[1.45] text-ink-soft">
             Tap × to drop anything. Tap an item to change its amount or
             freshness — totally optional.
           </p>
         </div>
-        <div style={css("display:flex;flex-wrap:wrap;gap:8px")}>
+        <div className="flex flex-wrap gap-8">
           {enriched.map((ing) => (
             <div
               key={ing.id}
@@ -102,36 +84,25 @@ export function ConfirmScreen({
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") onAdjust(ing.id);
               }}
-              className="press"
-              style={css(ing.chipStyle)}
+              className={cx(
+                "press flex cursor-pointer items-start gap-10 rounded-tile py-9 pr-11 pl-13 select-none",
+                ing.chipLook,
+              )}
             >
-              <div style={css("display:flex;flex-direction:column;gap:4px;min-width:0")}>
-                <span style={css("font-size:14px;font-weight:700;color:var(--ink)")}>
-                  {ing.name}
-                </span>
-                <span
-                  style={css("display:flex;align-items:center;gap:8px;flex-wrap:wrap")}
-                >
-                  <span
-                    style={css(
-                      "font-size:12px;color:var(--ink-soft);font-weight:600;border-bottom:1px dashed var(--muted);line-height:1.25",
-                    )}
-                  >
+              <div className="flex min-w-0 flex-col gap-4">
+                <span className="text-14 font-bold text-ink">{ing.name}</span>
+                <span className="flex flex-wrap items-center gap-8">
+                  <span className="border-b border-dashed border-muted text-12 leading-[1.25] font-semibold text-ink-soft">
                     {ing.amount}
                   </span>
                   {ing.tier && (
                     <span
-                      style={css(
-                        "display:inline-flex;align-items:center;gap:5px;font-family:var(--font-label);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:" +
-                          ing.tier.ink,
+                      className={cx(
+                        "inline-flex items-center gap-5 font-label text-[9.5px] font-bold tracking-[.05em] uppercase",
+                        ing.tier.ink,
                       )}
                     >
-                      <span
-                        style={css(
-                          "width:6px;height:6px;border-radius:50%;display:inline-block;flex:none;background:" +
-                            ing.tier.color,
-                        )}
-                      />
+                      <span className={cx("inline-block size-6 flex-none rounded-full", ing.tier.dot)} />
                       {ing.tier.label}
                     </span>
                   )}
@@ -143,9 +114,7 @@ export function ConfirmScreen({
                   onRemove(ing.id);
                 }}
                 aria-label="Remove"
-                style={css(
-                  "cursor:pointer;border:none;background:none;color:var(--muted);font-size:17px;line-height:1;padding:2px 0 4px;align-self:flex-start",
-                )}
+                className="cursor-pointer self-start bg-transparent pt-2 pb-4 text-[17px] leading-none text-muted"
               >
                 ×
               </button>
@@ -153,27 +122,11 @@ export function ConfirmScreen({
           ))}
         </div>
         {urgent.length > 0 && (
-          <div
-            style={css(
-              "display:flex;gap:11px;align-items:flex-start;background:var(--rescue-bg);border:1px solid var(--rescue);border-radius:var(--radius-sm);padding:13px 14px",
-            )}
-          >
-            <span
-              style={css(
-                "width:9px;height:9px;border-radius:50%;background:var(--rescue);margin-top:4px;flex:none;box-shadow:0 0 0 4px rgba(192,122,27,.16)",
-              )}
-            />
+          <div className="flex items-start gap-11 rounded-tile border border-rescue bg-rescue-bg px-14 py-13">
+            <span className="mt-4 size-9 flex-none rounded-full bg-rescue shadow-[0_0_0_4px_rgba(192,122,27,.16)]" />
             <div>
-              <div
-                style={css(
-                  "font-size:14px;font-weight:700;color:var(--ink);line-height:1.35",
-                )}
-              >
-                {perishClaim}
-              </div>
-              <div
-                style={css("font-size:12px;color:var(--ink-soft);margin-top:3px")}
-              >
+              <div className="text-14 leading-[1.35] font-bold text-ink">{perishClaim}</div>
+              <div className="mt-3 text-12 text-ink-soft">
                 No waste, no guilt trip — just first in line.
               </div>
             </div>
@@ -181,57 +134,34 @@ export function ConfirmScreen({
         )}
         <button
           onClick={onAddVoice}
-          style={css(
-            "align-self:flex-start;cursor:pointer;display:inline-flex;align-items:center;gap:7px;border:1px dashed var(--accent);background:none;color:var(--accent);font-family:var(--font-body);font-weight:700;font-size:13px;padding:8px 14px;border-radius:999px",
-          )}
+          className="inline-flex cursor-pointer items-center gap-7 self-start rounded-full border border-dashed border-accent bg-transparent px-14 py-8 font-body text-13 font-bold text-accent"
         >
           <Mic size={14} sw={2.2} />
           Add more by voice
         </button>
-        <div style={css("height:1px;background:var(--line);margin:2px 0")} />
+        <div className="my-2 h-1 bg-line" />
         <div>
-          <span
-            style={css(
-              "font-family:var(--font-label);font-size:11px;letter-spacing:var(--label-tracking);text-transform:var(--label-transform);color:var(--muted);font-weight:700",
-            )}
-          >
-            A few defaults — tap to change
-          </span>
-          <div style={css("display:flex;flex-wrap:wrap;gap:8px;margin-top:11px")}>
+          <span className="label-caps text-muted">A few defaults — tap to change</span>
+          <div className="mt-11 flex flex-wrap gap-8">
             {prefChips.map((pc) => (
-              <button
+              <Chip
                 key={pc.key}
+                on={pc.emph}
                 onClick={() => onOpenPref(pc.key)}
-                style={css(
-                  "cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-family:var(--font-body);font-weight:600;font-size:13px;padding:9px 13px;border-radius:999px;color:var(--ink);border:1px " +
-                    (pc.emph ? "solid var(--accent)" : "solid var(--line)") +
-                    ";background:" +
-                    (pc.emph ? "var(--accent-soft)" : "var(--card)"),
-                )}
+                className="inline-flex items-center gap-7 px-13 py-9 text-13"
               >
                 {pc.label}
-                <span style={css("color:var(--muted);font-size:11px;font-weight:600")}>
-                  edit
-                </span>
-              </button>
+                <span className="text-11 font-semibold text-muted">edit</span>
+              </Chip>
             ))}
           </div>
         </div>
       </div>
-      <div
-        style={css(
-          "position:sticky;bottom:0;padding:12px 18px 16px;background:linear-gradient(to top,var(--paper),var(--paper) 66%,transparent)",
-        )}
-      >
-        <button
-          onClick={onGenerate}
-          style={css(
-            "width:100%;cursor:pointer;border:none;background:var(--accent);color:var(--accent-ink);font-family:var(--font-body);font-weight:700;font-size:16px;padding:15px;border-radius:var(--radius-sm);box-shadow:var(--shadow-sm)",
-          )}
-        >
+      <StickyBar className="px-18 pt-12 pb-16">
+        <PrimaryButton onClick={onGenerate} className="w-full p-15 text-16 shadow-raised">
           Find me recipes
-        </button>
-      </div>
+        </PrimaryButton>
+      </StickyBar>
     </>
   );
 }

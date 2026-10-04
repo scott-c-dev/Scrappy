@@ -80,7 +80,7 @@ export default function Scrappy() {
         <div className="flex flex-none items-center justify-between px-18 pt-16 pb-10">
           <div className="flex min-w-0 items-center gap-10">
             {showBack && (
-              <HeaderButton onClick={back} aria-label="Back" className="pb-2 text-[18px] text-ink">
+              <HeaderButton onClick={back} aria-label="Back" className="pb-2 text-20 text-ink">
                 ‹
               </HeaderButton>
             )}

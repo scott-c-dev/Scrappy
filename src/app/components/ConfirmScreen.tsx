@@ -114,7 +114,7 @@ export function ConfirmScreen({
                   onRemove(ing.id);
                 }}
                 aria-label="Remove"
-                className="cursor-pointer self-start bg-transparent pt-2 pb-4 text-[17px] leading-none text-muted"
+                className="cursor-pointer self-start bg-transparent pt-2 pb-4 text-16 leading-none text-muted"
               >
                 ×
               </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { css } from "@/lib/css";
+import { cx } from "@/lib/cx";
 import { useScrappy } from "./hooks/useScrappy";
 import { InputScreen } from "./components/InputScreen";
 import { ConfirmScreen } from "./components/ConfirmScreen";
@@ -73,83 +73,49 @@ export default function Scrappy() {
   const adjusting = s.ingredients.find((i) => i.id === s.adjustId);
 
   return (
-    <div
-      className="scrappy-root"
-      style={css(
-        "height:100dvh;background:var(--page);font-family:var(--font-body);color:var(--ink);display:flex;flex-direction:column;overflow:hidden",
-      )}
-    >
+    <div className="scrappy-root flex h-dvh flex-col overflow-hidden bg-page font-body text-ink">
       {/* Full-bleed card — fixed shell, only the inner area scrolls */}
-      <div
-        style={css(
-          "width:100%;flex:1;min-height:0;background:var(--paper);position:relative;overflow:hidden;display:flex;flex-direction:column",
-        )}
-      >
+      <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-paper">
         {/* Header */}
-        <div
-          style={css(
-            "display:flex;align-items:center;justify-content:space-between;padding:16px 18px 10px;flex:none",
-          )}
-        >
-          <div style={css("display:flex;align-items:center;gap:10px;min-width:0")}>
+        <div className="flex flex-none items-center justify-between px-18 pt-16 pb-10">
+          <div className="flex min-w-0 items-center gap-10">
             {showBack && (
-              <button
-                onClick={back}
-                aria-label="Back"
-                style={css(
-                  "cursor:pointer;border:1px solid var(--line);background:var(--card);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:18px;flex:none;padding-bottom:2px",
-                )}
-              >
+              <HeaderButton onClick={back} aria-label="Back" className="pb-2 text-[18px] text-ink">
                 ‹
-              </button>
+              </HeaderButton>
             )}
-            <span
-              style={css(
-                "font-family:var(--font-display);font-weight:800;font-size:20px;color:var(--ink)",
-              )}
-            >
+            <span className="font-display text-20 font-extrabold text-ink">
               {s.screen === "settings" ? "Settings" : "Scrappy"}
             </span>
           </div>
-          <div style={css("display:flex;align-items:center;gap:12px")}>
+          <div className="flex items-center gap-12">
             <div
-              style={css(
-                "display:flex;gap:5px;align-items:center;opacity:" +
-                  (s.screen === "settings" ? "0" : "1"),
+              className={cx(
+                "flex items-center gap-5",
+                s.screen === "settings" && "opacity-0",
               )}
             >
               {[0, 1, 2, 3].map((i) => (
                 <span
                   key={i}
-                  style={css(
-                    "width:7px;height:7px;border-radius:50%;background:" +
-                      (i <= progressStep ? "var(--accent)" : "var(--line)"),
+                  className={cx(
+                    "size-7 rounded-full",
+                    i <= progressStep ? "bg-accent" : "bg-line",
                   )}
                 />
               ))}
             </div>
             {/* Settings only from home: units shouldn't change mid-flow. */}
             {s.screen === "input" && (
-              <button
-                onClick={openSettings}
-                aria-label="Settings"
-                style={css(
-                  "cursor:pointer;border:1px solid var(--line);background:var(--card);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);flex:none",
-                )}
-              >
+              <HeaderButton onClick={openSettings} aria-label="Settings" className="text-ink-soft">
                 <GearIcon />
-              </button>
+              </HeaderButton>
             )}
           </div>
         </div>
 
         {/* Scroll area */}
-        <div
-          className="noscroll"
-          style={css(
-            "flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative",
-          )}
-        >
+        <div className="noscroll relative flex-1 overflow-y-auto">
           {s.screen === "input" && (
             <InputScreen
               onVoice={() => startVoice("input")}
@@ -261,6 +227,21 @@ export default function Scrappy() {
         )}
       </div>
     </div>
+  );
+}
+
+function HeaderButton({
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      {...props}
+      className={cx(
+        "flex size-34 flex-none cursor-pointer items-center justify-center rounded-full border border-line bg-card",
+        className,
+      )}
+    />
   );
 }
 

@@ -5,16 +5,17 @@ import type { FreshnessTag } from "@/lib/types";
 export interface Tier {
   tag: Exclude<FreshnessTag, null>;
   label: string;
-  /* Dot and border colour, label colour, selected background. */
-  color: string;
+  /* Class names (kept whole so Tailwind finds them): the dot, the label
+     text, and the border + background of a selected tier. */
+  dot: string;
   ink: string;
-  bg: string;
+  picked: string;
 }
 
 export const TIERS: Tier[] = [
-  { tag: "going bad", label: "Going bad", color: "var(--rescue)", ink: "var(--rescue)", bg: "var(--rescue-bg)" },
-  { tag: "use soon", label: "Use soon", color: "var(--soon)", ink: "var(--soon-ink)", bg: "var(--soon-bg)" },
-  { tag: "fresh", label: "Fresh", color: "var(--fresh)", ink: "var(--fresh)", bg: "var(--fresh-bg)" },
+  { tag: "going bad", label: "Going bad", dot: "bg-rescue", ink: "text-rescue", picked: "border-rescue bg-rescue-bg" },
+  { tag: "use soon", label: "Use soon", dot: "bg-soon", ink: "text-soon-ink", picked: "border-soon bg-soon-bg" },
+  { tag: "fresh", label: "Fresh", dot: "bg-fresh", ink: "text-fresh", picked: "border-fresh bg-fresh-bg" },
 ];
 
 export const tierOf = (tag: FreshnessTag) => TIERS.find((t) => t.tag === tag);

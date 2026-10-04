@@ -1,4 +1,5 @@
-import { css } from "@/lib/css";
+import { cx } from "@/lib/cx";
+import { PrimaryButton, SecondaryButton, StickyBar, Spinner } from "./ui";
 import type { Dish } from "@/lib/types";
 
 interface CookScreenProps {
@@ -45,125 +46,66 @@ export function CookScreen({
   }));
 
   return (
-    <div
-      style={css(
-        "padding:8px 16px 6px;display:flex;flex-direction:column;gap:14px;min-height:100%",
-      )}
-    >
-      <div
-        className="noscroll"
-        style={css("display:flex;gap:7px;overflow-x:auto;padding-bottom:2px")}
-      >
+    <div className="flex min-h-full flex-col gap-14 px-16 pt-8 pb-6">
+      <div className="noscroll flex gap-7 overflow-x-auto pb-2">
         {cookDishTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => onSetDish(tab.idx)}
-            style={css(
-              "cursor:pointer;white-space:nowrap;flex:none;font-family:var(--font-body);font-weight:600;font-size:13px;padding:8px 14px;border-radius:999px;border:1px solid " +
-                (tab.active ? "var(--accent)" : "var(--line)") +
-                ";background:" +
-                (tab.active ? "var(--accent)" : "var(--card)") +
-                ";color:" +
-                (tab.active ? "var(--accent-ink)" : "var(--ink)"),
+            className={cx(
+              "flex-none cursor-pointer rounded-full border px-14 py-8 font-body text-13 font-semibold whitespace-nowrap",
+              tab.active
+                ? "border-accent bg-accent text-accent-ink"
+                : "border-line bg-card text-ink",
             )}
           >
             {tab.label}
           </button>
         ))}
       </div>
-      <div style={css("display:flex;flex-direction:column;gap:9px")}>
-        <div
-          style={css(
-            "display:flex;justify-content:space-between;align-items:baseline;gap:10px",
-          )}
-        >
-          <span
-            style={css(
-              "font-family:var(--font-label);font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;color:var(--accent);white-space:nowrap",
-            )}
-          >
+      <div className="flex flex-col gap-9">
+        <div className="flex items-baseline justify-between gap-10">
+          <span className="font-label text-11 font-bold tracking-[.06em] whitespace-nowrap text-accent uppercase">
             {"Step " + (cookStep + 1) + " of " + stepsArr.length}
           </span>
-          <span
-            style={css(
-              "font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis",
-            )}
-          >
-            {curDish.name || ""}
-          </span>
+          <span className="truncate text-12 text-muted">{curDish.name || ""}</span>
         </div>
-        <div style={css("display:flex;gap:4px")}>
+        <div className="flex gap-4">
           {stepsArr.map((_, idx) => (
             <span
               key={idx}
-              style={css(
-                "height:4px;border-radius:2px;flex:1;background:" +
-                  (idx <= cookStep ? "var(--accent)" : "var(--line)"),
+              className={cx(
+                "h-4 flex-1 rounded-full",
+                idx <= cookStep ? "bg-accent" : "bg-line",
               )}
             />
           ))}
         </div>
       </div>
-      <div style={css("padding:2px 0")}>
-        <p
-          style={css(
-            "font-family:var(--font-display);font-weight:700;font-size:26px;line-height:1.22;color:var(--ink);margin:0",
-          )}
-        >
-          {step.text}
-        </p>
+      <div className="py-2">
+        <p className="font-display text-26 leading-[1.22] font-bold text-ink">{step.text}</p>
       </div>
       {step.img && (
         <div>
           {imgSt !== "ready" ? (
-            <div
-              style={css(
-                "position:relative;width:100%;height:184px;border-radius:var(--radius-sm);background:var(--accent-soft);overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px",
-              )}
-            >
-              <div
-                style={css(
-                  "position:absolute;top:0;bottom:0;left:0;width:55%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);animation:shimmer 1.4s infinite",
-                )}
-              />
-              <div
-                style={css(
-                  "width:30px;height:30px;border-radius:50%;border:3px solid rgba(255,255,255,.65);border-top-color:var(--accent);animation:spin .8s linear infinite;position:relative",
-                )}
-              />
-              <div
-                style={css(
-                  "font-family:var(--font-label);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--rescue);font-weight:700;position:relative",
-                )}
-              >
+            <div className="relative flex h-184 w-full flex-col items-center justify-center gap-11 overflow-hidden rounded-tile bg-accent-soft">
+              <div className="absolute top-0 bottom-0 left-0 w-[55%] animate-shimmer bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent)]" />
+              <Spinner light className="relative size-30 border-3" />
+              <div className="relative font-label text-11 font-bold tracking-[.04em] text-rescue uppercase">
                 Sketching this step…
               </div>
             </div>
           ) : (
-            <div
-              style={css(
-                "width:100%;height:184px;border-radius:var(--radius-sm);background:linear-gradient(135deg,var(--accent-soft),var(--rescue-bg));position:relative;overflow:hidden;display:flex;align-items:flex-end;padding:12px",
-              )}
-            >
+            <div className="relative flex h-184 w-full items-end overflow-hidden rounded-tile bg-[linear-gradient(135deg,var(--accent-soft),var(--rescue-bg))] p-12">
               {imgUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={imgUrl}
                   alt={step.cap || "reference shot"}
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                  }}
+                  className="absolute inset-0 size-full object-cover"
                 />
               )}
-              <span
-                style={css(
-                  "position:relative;font-family:var(--font-label);font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:700;color:var(--ink);background:rgba(255,255,255,.78);padding:5px 9px;border-radius:8px",
-                )}
-              >
+              <span className="relative rounded-inner bg-[rgba(255,255,255,.78)] px-9 py-5 font-label text-10 font-bold tracking-[.04em] text-ink uppercase">
                 {step.cap || "reference shot"}
               </span>
             </div>
@@ -171,42 +113,20 @@ export function CookScreen({
         </div>
       )}
       {!step.img && (
-        <div
-          style={css(
-            "display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;padding:2px 0",
-          )}
-        >
-          <span
-            style={css(
-              "width:5px;height:5px;border-radius:50%;background:var(--fresh);flex:none",
-            )}
-          />
+        <div className="flex items-center gap-8 py-2 text-12 text-muted">
+          <span className="size-5 flex-none rounded-full bg-fresh" />
           No photo needed here — you&apos;ve got this.
         </div>
       )}
-      <div style={css("flex:1")} />
-      <div
-        style={css(
-          "position:sticky;bottom:0;display:flex;gap:10px;padding:12px 0 14px;background:linear-gradient(to top,var(--paper),var(--paper) 66%,transparent)",
-        )}
-      >
-        <button
-          onClick={onPrev}
-          style={css(
-            "flex:none;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:var(--font-body);font-weight:700;font-size:15px;padding:14px 18px;border-radius:var(--radius-sm)",
-          )}
-        >
+      <div className="flex-1" />
+      <StickyBar className="flex gap-10 pt-12 pb-14">
+        <SecondaryButton tone="solid" onClick={onPrev} className="px-18 py-14 text-15">
           Back
-        </button>
-        <button
-          onClick={onNext}
-          style={css(
-            "flex:1;cursor:pointer;border:none;background:var(--accent);color:var(--accent-ink);font-family:var(--font-body);font-weight:700;font-size:16px;padding:14px;border-radius:var(--radius-sm);box-shadow:var(--shadow-sm)",
-          )}
-        >
+        </SecondaryButton>
+        <PrimaryButton onClick={onNext} className="flex-1 p-14 text-16 shadow-raised">
           {nextLabel}
-        </button>
-      </div>
+        </PrimaryButton>
+      </StickyBar>
     </div>
   );
 }

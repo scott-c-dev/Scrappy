@@ -1,6 +1,6 @@
-import { css } from "@/lib/css";
 import type { Dish } from "@/lib/types";
 import { SwapIcon } from "./SwapSheet";
+import { PrimaryButton, Spinner, StickyBar } from "./ui";
 
 interface DishesScreenProps {
   loading: boolean;
@@ -23,29 +23,13 @@ export function DishesScreen({
 }: DishesScreenProps) {
   if (loading) {
     return (
-      <div
-        style={css(
-          "min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:40px 30px;text-align:center",
-        )}
-      >
-        <div
-          style={css(
-            "width:62px;height:62px;border-radius:50%;border:4px solid var(--accent-soft);border-top-color:var(--accent);animation:spin .9s linear infinite",
-          )}
-        />
+      <div className="flex min-h-full flex-col items-center justify-center gap-20 px-30 py-40 text-center">
+        <Spinner className="size-62 border-4" />
         <div>
-          <div
-            style={css(
-              "font-family:var(--font-display);font-weight:800;font-size:23px;color:var(--ink)",
-            )}
-          >
+          <div className="font-display text-22 font-extrabold text-ink">
             Raiding your fridge…
           </div>
-          <div
-            style={css(
-              "font-size:14px;color:var(--ink-soft);margin-top:8px;max-width:250px;line-height:1.45",
-            )}
-          >
+          <div className="mt-8 max-w-250 text-14 leading-[1.45] text-ink-soft">
             Putting the cabbage and tofu at the front of the queue. Two seconds.
           </div>
         </div>
@@ -63,151 +47,68 @@ export function DishesScreen({
 
   return (
     <>
-      <div
-        style={css(
-          "padding:10px 18px 8px;display:flex;flex-direction:column;gap:13px;animation:risein .4s ease",
-        )}
-      >
-        <div
-          style={css(
-            "background:var(--fresh-bg);border-radius:var(--radius-sm);padding:13px 14px;display:flex;gap:11px;align-items:flex-start",
-          )}
-        >
-          <span
-            style={css(
-              "width:9px;height:9px;border-radius:50%;background:var(--fresh);margin-top:4px;flex:none",
-            )}
-          />
-          <div
-            style={css(
-              "font-size:14px;font-weight:700;color:var(--ink);line-height:1.35",
-            )}
-          >
-            {topClaim}
-          </div>
+      <div className="flex animate-risein flex-col gap-13 px-18 pt-10 pb-8">
+        <div className="flex items-start gap-11 rounded-tile bg-fresh-bg px-14 py-13">
+          <span className="mt-4 size-9 flex-none rounded-full bg-fresh" />
+          <div className="text-14 leading-[1.35] font-bold text-ink">{topClaim}</div>
         </div>
-        <span
-          style={css(
-            "font-family:var(--font-label);font-size:11px;letter-spacing:var(--label-tracking);text-transform:var(--label-transform);color:var(--muted);font-weight:700",
-          )}
-        >
-          3 dishes · no extra shopping
-        </span>
+        <span className="label-caps text-muted">3 dishes · no extra shopping</span>
         {dishes.map((d) => (
           <div
             key={d.id}
-            style={css(
-              "position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:11px",
-            )}
+            className="relative flex flex-col gap-11 rounded-card border border-line bg-card p-16 shadow-raised"
           >
-            <div
-              style={css(
-                "display:flex;justify-content:space-between;align-items:flex-start;gap:10px",
-              )}
-            >
-              <div style={css("min-width:0")}>
-                <h3
-                  style={css(
-                    "font-family:var(--font-display);font-weight:800;font-size:21px;margin:0;color:var(--ink);line-height:1.1",
-                  )}
-                >
+            <div className="flex items-start justify-between gap-10">
+              <div className="min-w-0">
+                <h3 className="font-display text-22 leading-[1.1] font-extrabold text-ink">
                   {d.name}
                 </h3>
-                <p
-                  style={css(
-                    "font-size:13px;color:var(--ink-soft);margin:5px 0 0;line-height:1.4",
-                  )}
-                >
-                  {d.blurb}
-                </p>
+                <p className="mt-5 text-13 leading-[1.4] text-ink-soft">{d.blurb}</p>
               </div>
               <button
                 onClick={() => onSwap(d.id)}
-                style={css(
-                  "flex:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-family:var(--font-body);font-weight:600;font-size:12px;padding:7px 11px;border-radius:999px",
-                )}
+                className="inline-flex flex-none cursor-pointer items-center gap-5 rounded-full border border-line bg-paper px-11 py-7 font-body text-12 font-semibold text-ink"
               >
                 <SwapIcon size={12} />
                 Swap
               </button>
             </div>
-            <div
-              style={css(
-                "display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--rescue-bg);border-radius:10px;padding:7px 11px",
-              )}
-            >
-              <span
-                style={css(
-                  "font-family:var(--font-label);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;color:var(--rescue)",
-                )}
-              >
+            <div className="flex flex-wrap items-center gap-8 rounded-inner bg-rescue-bg px-11 py-7">
+              <span className="font-label text-10 font-bold tracking-[.05em] text-rescue uppercase">
                 Uses up
               </span>
-              <span
-                style={css("font-size:12.5px;font-weight:700;color:var(--ink)")}
-              >
+              <span className="text-13 font-bold text-ink">
                 {(d.rescue || []).join(" · ")}
               </span>
             </div>
-            <div style={css("display:flex;flex-wrap:wrap;gap:6px")}>
+            <div className="flex flex-wrap gap-6">
               {d.uses.map((u, ui) => (
                 <span
                   key={ui}
-                  style={css(
-                    "font-size:11.5px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);padding:4px 9px;border-radius:999px",
-                  )}
+                  className="rounded-full border border-line bg-paper px-9 py-4 text-12 text-ink-soft"
                 >
                   {u}
                 </span>
               ))}
             </div>
             {replacingId === d.id && (
-              <div
-                style={css(
-                  "position:absolute;inset:0;background:var(--card);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px",
-                )}
-              >
-                <div
-                  style={css(
-                    "width:32px;height:32px;border-radius:50%;border:3px solid var(--accent-soft);border-top-color:var(--accent);animation:spin .8s linear infinite",
-                  )}
-                />
-                <div
-                  style={css("font-size:13px;color:var(--ink-soft);font-weight:600")}
-                >
-                  Finding another one…
-                </div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-11 rounded-card bg-card">
+                <Spinner className="size-32 border-3" />
+                <div className="text-13 font-semibold text-ink-soft">Finding another one…</div>
               </div>
             )}
           </div>
         ))}
-        <div
-          style={css(
-            "display:flex;align-items:center;gap:8px;justify-content:center;color:var(--muted);font-size:12.5px;padding:4px 0 2px;text-align:center",
-          )}
-        >
-          <span
-            style={css(
-              "width:6px;height:6px;border-radius:50%;background:var(--fresh);flex:none",
-            )}
-          />
+        <div className="flex items-center justify-center gap-8 pt-4 pb-2 text-center text-13 text-muted">
+          <span className="size-6 flex-none rounded-full bg-fresh" />
           {rescueLine}
         </div>
       </div>
-      <div
-        style={css(
-          "position:sticky;bottom:0;padding:12px 18px 16px;background:linear-gradient(to top,var(--paper),var(--paper) 66%,transparent)",
-        )}
-      >
-        <button
-          onClick={onStartCook}
-          style={css(
-            "width:100%;cursor:pointer;border:none;background:var(--accent);color:var(--accent-ink);font-family:var(--font-body);font-weight:700;font-size:16px;padding:15px;border-radius:var(--radius-sm);box-shadow:var(--shadow-sm)",
-          )}
-        >
+      <StickyBar className="px-18 pt-12 pb-16">
+        <PrimaryButton onClick={onStartCook} className="w-full p-15 text-16 shadow-raised">
           Let&apos;s cook these
-        </button>
-      </div>
+        </PrimaryButton>
+      </StickyBar>
     </>
   );
 }

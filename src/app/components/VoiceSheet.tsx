@@ -1,7 +1,10 @@
-import { css } from "@/lib/css";
 import type { VoiceContext, VoiceState } from "../hooks/useScrappy";
 import { isPref, type VoiceErrorAction, type VoiceErrorView } from "../voiceErrors";
 import { Mic } from "./Mic";
+import { PrimaryButton, SecondaryButton, Sheet, Spinner, TextButton } from "./ui";
+
+// The review and error actions can carry an icon next to the label.
+const PRIMARY_LAYOUT = "inline-flex flex-1 items-center justify-center gap-7 p-13 text-15";
 
 interface VoiceSheetProps {
   voiceState: VoiceState;
@@ -21,11 +24,6 @@ interface VoiceSheetProps {
   onReviewSend: () => void;
   onErrorAction: (act: VoiceErrorAction) => void;
 }
-
-const SECONDARY_BTN =
-  "flex:none;cursor:pointer;border:1px solid var(--line);background:none;color:var(--ink-soft);font-family:var(--font-body);font-weight:600;font-size:14px;padding:13px 16px;border-radius:var(--radius-sm)";
-const PRIMARY_BTN =
-  "flex:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:none;background:var(--accent);color:var(--accent-ink);font-family:var(--font-body);font-weight:700;font-size:15px;padding:13px;border-radius:var(--radius-sm)";
 
 export function VoiceSheet({
   voiceState,
@@ -64,212 +62,135 @@ export function VoiceSheet({
           : "List what you’ve got — amounts are optional.";
 
   return (
-    <div
-      style={css(
-        "position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;justify-content:flex-end",
-      )}
+    <Sheet
+      onClose={dismissable ? onCancel : undefined}
+      className="items-center gap-16 px-22 pt-24 pb-26"
     >
-      <div
-        onClick={dismissable ? onCancel : undefined}
-        style={css("position:absolute;inset:0;background:rgba(30,20,12,.34)")}
-      />
-      <div
-        style={css(
-          "position:relative;background:var(--paper);border-radius:26px 26px 0 0;padding:24px 22px 26px;display:flex;flex-direction:column;align-items:center;gap:16px;animation:sheetin .32s cubic-bezier(.2,.8,.2,1);box-shadow:0 -10px 40px rgba(0,0,0,.18)",
-        )}
-      >
-        <div
-          style={css(
-            "font-family:var(--font-display);font-weight:800;font-size:22px;color:var(--ink);text-align:center",
-          )}
-        >
-          {voiceState === "error" && error ? error.title : voiceTitle}
-        </div>
-
-        {voiceState === "listening" && (
-          <div
-            style={css(
-              "display:flex;align-items:center;justify-content:center;gap:5px;height:40px",
-            )}
-          >
-            {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-              <span
-                key={i}
-                style={css(
-                  "width:6px;border-radius:3px;background:var(--accent);height:14px;animation:wave 0.9s ease-in-out " +
-                    i * 0.09 +
-                    "s infinite",
-                )}
-              />
-            ))}
-          </div>
-        )}
-
-        {voiceState === "processing" && (
-          <div
-            style={css("display:flex;align-items:center;gap:10px;height:40px")}
-          >
-            <div
-              style={css(
-                "width:24px;height:24px;border-radius:50%;border:3px solid var(--accent-soft);border-top-color:var(--accent);animation:spin .8s linear infinite",
-              )}
-            />
-            <span
-              style={css("font-size:14px;color:var(--ink-soft);font-weight:600")}
-            >
-              {processingLabel}
-            </span>
-          </div>
-        )}
-
-        {showPartial && (
-          <div
-            style={css(
-              "background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);padding:13px 15px;width:100%;text-align:center;font-size:15px;color:var(--ink);line-height:1.4",
-            )}
-          >
-            “{voicePartial}”
-          </div>
-        )}
-
-        {voiceState === "listening" && (
-          <div style={css("display:flex;gap:10px;width:100%")}>
-            <button
-              onClick={onCancel}
-              style={css(
-                "flex:none;cursor:pointer;border:1px solid var(--line);background:none;color:var(--ink-soft);font-family:var(--font-body);font-weight:600;font-size:14px;padding:13px 18px;border-radius:var(--radius-sm)",
-              )}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={onDone}
-              style={css(
-                "flex:1;cursor:pointer;border:none;background:var(--accent);color:var(--accent-ink);font-family:var(--font-body);font-weight:700;font-size:15px;padding:13px;border-radius:var(--radius-sm)",
-              )}
-            >
-              That&apos;s everything
-            </button>
-          </div>
-        )}
-
-        {voiceState === "processing" && (
-          <button
-            onClick={onCancel}
-            style={css(
-              "cursor:pointer;border:none;background:none;color:var(--muted);font-family:var(--font-body);font-size:13px;font-weight:600;text-decoration:underline;text-underline-offset:3px",
-            )}
-          >
-            Cancel
-          </button>
-        )}
-
-        {voiceState === "review" && (
-          <div style={css("display:flex;flex-direction:column;gap:14px;width:100%")}>
-            {reviewEditing ? (
-              <textarea
-                value={reviewText}
-                onChange={(e) => onReviewChange(e.target.value)}
-                autoFocus
-                rows={4}
-                placeholder={
-                  isSwap
-                    ? "make it spicier, no tofu…"
-                    : isPrefCtx
-                      ? "e.g. make it for four"
-                      : "half a cabbage that's wilting, three eggs, leftover rice…"
-                }
-                style={css(
-                  "width:100%;resize:none;background:var(--card);border:1.5px solid var(--accent);border-radius:var(--radius-sm);padding:13px 15px;font-family:var(--font-body);font-size:15.5px;color:var(--ink);line-height:1.5;outline:none",
-                )}
-              />
-            ) : (
-              <div
-                style={css(
-                  "background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px 16px;width:100%;font-size:15.5px;color:var(--ink);line-height:1.5;text-wrap:pretty",
-                )}
-              >
-                “{reviewText}”
-              </div>
-            )}
-            <div
-              style={css(
-                "font-size:12.5px;color:var(--muted);text-align:center;line-height:1.45",
-              )}
-            >
-              {reviewHint}
-            </div>
-            <div style={css("display:flex;gap:10px;width:100%")}>
-              <button
-                onClick={reviewEditing ? onReviewRedo : onReviewEdit}
-                style={css(SECONDARY_BTN)}
-              >
-                {!reviewEditing
-                  ? "Edit as text"
-                  : reviewTyped
-                    ? "Say it instead"
-                    : "Say it again"}
-              </button>
-              <button
-                onClick={onReviewSend}
-                disabled={!canSend}
-                style={css(
-                  PRIMARY_BTN + (canSend ? "" : ";opacity:.45;cursor:default"),
-                )}
-              >
-                {isSwap ? "Swap it →" : isPrefCtx ? "Use this →" : "Cook with this →"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {voiceState === "error" && error && (
-          <div
-            style={css(
-              "display:flex;flex-direction:column;align-items:center;gap:15px;width:100%",
-            )}
-          >
-            <div
-              style={css(
-                "width:46px;height:46px;border-radius:50%;background:var(--rescue-bg);display:flex;align-items:center;justify-content:center;color:var(--rescue)",
-              )}
-            >
-              {error.icon === "mic" ? <MicOff /> : <CloudAlert />}
-            </div>
-            <div
-              style={css(
-                "font-size:14.5px;color:var(--ink-soft);line-height:1.45;text-align:center;max-width:280px;text-wrap:pretty",
-              )}
-            >
-              {error.body}
-            </div>
-            <div style={css("display:flex;gap:10px;width:100%")}>
-              {error.secondary && (
-                <button
-                  onClick={() => onErrorAction(error.secondary!.act)}
-                  style={css(SECONDARY_BTN)}
-                >
-                  {error.secondary.label}
-                </button>
-              )}
-              <button
-                onClick={() => onErrorAction(error.primary.act)}
-                style={css(PRIMARY_BTN)}
-              >
-                {error.primary.mic && <Mic size={15} sw={2.2} />}
-                {error.primary.label}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {voiceState === "listening" && (
-          <div style={css("font-size:11.5px;color:var(--muted);text-align:center")}>
-            Speak normally — I&apos;ll catch the amounts.
-          </div>
-        )}
+      <div className="text-center font-display text-22 font-extrabold text-ink">
+        {voiceState === "error" && error ? error.title : voiceTitle}
       </div>
-    </div>
+
+      {voiceState === "listening" && (
+        <div className="flex h-40 items-center justify-center gap-5">
+          {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+            <span
+              key={i}
+              className="h-14 w-6 animate-wave rounded-full bg-accent"
+              style={{ animationDelay: `${i * 0.09}s` }}
+            />
+          ))}
+        </div>
+      )}
+
+      {voiceState === "processing" && (
+        <div className="flex h-40 items-center gap-10">
+          <Spinner className="size-24 border-3" />
+          <span className="text-14 font-semibold text-ink-soft">{processingLabel}</span>
+        </div>
+      )}
+
+      {showPartial && (
+        <div className="w-full rounded-tile border border-line bg-card px-15 py-13 text-center text-15 leading-[1.4] text-ink">
+          “{voicePartial}”
+        </div>
+      )}
+
+      {voiceState === "listening" && (
+        <div className="flex w-full gap-10">
+          <SecondaryButton onClick={onCancel} className="px-18 py-13 text-14">
+            Cancel
+          </SecondaryButton>
+          <PrimaryButton onClick={onDone} className="flex-1 p-13 text-15">
+            That&apos;s everything
+          </PrimaryButton>
+        </div>
+      )}
+
+      {voiceState === "processing" && (
+        <TextButton onClick={onCancel} className="text-13 text-muted">
+          Cancel
+        </TextButton>
+      )}
+
+      {voiceState === "review" && (
+        <div className="flex w-full flex-col gap-14">
+          {reviewEditing ? (
+            <textarea
+              value={reviewText}
+              onChange={(e) => onReviewChange(e.target.value)}
+              autoFocus
+              rows={4}
+              placeholder={
+                isSwap
+                  ? "make it spicier, no tofu…"
+                  : isPrefCtx
+                    ? "e.g. make it for four"
+                    : "half a cabbage that's wilting, three eggs, leftover rice…"
+              }
+              className="w-full resize-none rounded-tile border-[1.5px] border-accent bg-card px-15 py-13 font-body text-16 leading-[1.5] text-ink outline-none"
+            />
+          ) : (
+            <div className="w-full rounded-tile border border-line bg-card px-16 py-14 text-16 leading-[1.5] text-pretty text-ink">
+              “{reviewText}”
+            </div>
+          )}
+          <div className="text-center text-13 leading-[1.45] text-muted">{reviewHint}</div>
+          <div className="flex w-full gap-10">
+            <SecondaryButton
+              onClick={reviewEditing ? onReviewRedo : onReviewEdit}
+              className="px-16 py-13 text-14"
+            >
+              {!reviewEditing
+                ? "Edit as text"
+                : reviewTyped
+                  ? "Say it instead"
+                  : "Say it again"}
+            </SecondaryButton>
+            <PrimaryButton
+              onClick={onReviewSend}
+              disabled={!canSend}
+              className={PRIMARY_LAYOUT}
+            >
+              {isSwap ? "Swap it →" : isPrefCtx ? "Use this →" : "Cook with this →"}
+            </PrimaryButton>
+          </div>
+        </div>
+      )}
+
+      {voiceState === "error" && error && (
+        <div className="flex w-full flex-col items-center gap-15">
+          <div className="flex size-46 items-center justify-center rounded-full bg-rescue-bg text-rescue">
+            {error.icon === "mic" ? <MicOff /> : <CloudAlert />}
+          </div>
+          <div className="max-w-280 text-center text-15 leading-[1.45] text-pretty text-ink-soft">
+            {error.body}
+          </div>
+          <div className="flex w-full gap-10">
+            {error.secondary && (
+              <SecondaryButton
+                onClick={() => onErrorAction(error.secondary!.act)}
+                className="px-16 py-13 text-14"
+              >
+                {error.secondary.label}
+              </SecondaryButton>
+            )}
+            <PrimaryButton
+              onClick={() => onErrorAction(error.primary.act)}
+              className={PRIMARY_LAYOUT}
+            >
+              {error.primary.mic && <Mic size={15} sw={2.2} />}
+              {error.primary.label}
+            </PrimaryButton>
+          </div>
+        </div>
+      )}
+
+      {voiceState === "listening" && (
+        <div className="text-center text-12 text-muted">
+          Speak normally — I&apos;ll catch the amounts.
+        </div>
+      )}
+    </Sheet>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { css } from "@/lib/css";
+import { cx } from "@/lib/cx";
 import type { Ingredient } from "@/lib/types";
 import {
   fitsUnit,
@@ -15,6 +15,7 @@ import {
 } from "@/lib/units";
 import { hapticTick } from "@/lib/haptics";
 import { TIERS } from "./freshness";
+import { Chip, Sheet, TextButton } from "./ui";
 
 interface AdjustSheetProps {
   ingredient: Ingredient;
@@ -28,15 +29,7 @@ const TICK = 14;
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
-const pill = (on: boolean) =>
-  "cursor:pointer;font-family:var(--font-body);font-weight:600;font-size:13px;padding:8px 13px;border-radius:999px;color:var(--ink);border:1px solid " +
-  (on ? "var(--accent)" : "var(--line)") +
-  ";background:" +
-  (on ? "var(--accent-soft)" : "var(--card)");
-
-const sectionLabel = css(
-  "font-family:var(--font-label);font-size:11px;letter-spacing:var(--label-tracking);text-transform:var(--label-transform);color:var(--muted);font-weight:700",
-);
+const PILL = "px-13 py-8 text-13";
 
 /* Amount, unit and freshness for one ingredient. Every change applies at
    once; tapping outside or Done just closes. */
@@ -144,214 +137,150 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
     ing.amount == null ? "" : ing.unit === "pcs" ? "pcs" : unitWord(ing.unit, ing.amount);
 
   return (
-    <div
-      style={css(
-        "position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;justify-content:flex-end",
-      )}
-    >
-      <div
-        onClick={onClose}
-        style={css("position:absolute;inset:0;background:rgba(30,20,12,.34)")}
-      />
-      <div
-        className="noscroll"
-        style={css(
-          "position:relative;max-height:90%;overflow-y:auto;background:var(--paper);border-radius:26px 26px 0 0;padding:14px 20px 22px;display:flex;flex-direction:column;gap:18px;animation:sheetin .32s cubic-bezier(.2,.8,.2,1);box-shadow:0 -10px 40px rgba(0,0,0,.18)",
-        )}
-      >
-        <div
-          style={css(
-            "width:38px;height:4px;border-radius:2px;background:var(--line);align-self:center",
-          )}
-        />
-        <div
-          style={css("display:flex;align-items:center;justify-content:space-between;gap:12px")}
+    <Sheet onClose={onClose} className="noscroll max-h-[90%] gap-18 overflow-y-auto px-20 pt-14 pb-22">
+      <div className="h-4 w-38 self-center rounded-full bg-line" />
+      <div className="flex items-center justify-between gap-12">
+        <div className="font-display text-22 font-extrabold text-ink">{ing.name}</div>
+        <button
+          onClick={onClose}
+          className="cursor-pointer rounded-full bg-accent-soft px-16 py-8 font-body text-14 font-bold text-accent"
         >
-          <div
-            style={css(
-              "font-family:var(--font-display);font-weight:800;font-size:23px;color:var(--ink)",
-            )}
-          >
-            {ing.name}
-          </div>
-          <button
-            onClick={onClose}
-            style={css(
-              "cursor:pointer;border:none;background:var(--accent-soft);color:var(--accent);font-family:var(--font-body);font-weight:700;font-size:14px;padding:8px 16px;border-radius:999px",
-            )}
-          >
-            Done
-          </button>
-        </div>
+          Done
+        </button>
+      </div>
 
-        <div style={css("display:flex;flex-direction:column;gap:12px")}>
-          <span style={sectionLabel}>Amount</span>
-          <div style={css("display:flex;flex-direction:column;gap:6px")}>
+      <div className="flex flex-col gap-12">
+        <span className="label-caps text-muted">Amount</span>
+        <div className="flex flex-col gap-6">
+          <div className="flex h-48 items-baseline justify-center gap-7">
+            <span className="font-display text-40 leading-none font-extrabold text-ink tabular-nums">
+              {ing.amount == null ? "As needed" : formatNumber(ing.amount)}
+            </span>
+            <span className="text-16 font-bold text-ink-soft">{unitText}</span>
+          </div>
+          <div className="relative overflow-hidden rounded-tile border border-line bg-card">
             <div
-              style={css(
-                "display:flex;align-items:baseline;justify-content:center;gap:7px;height:48px",
+              ref={rulerRef}
+              onScroll={onRulerScroll}
+              onPointerDown={onUserScroll}
+              onTouchStart={onUserScroll}
+              onWheel={onUserScroll}
+              aria-label={`Amount in ${ing.unit}`}
+              className={cx(
+                "noscroll flex snap-x snap-mandatory overflow-x-auto [transition:opacity_.2s] [mask-image:linear-gradient(90deg,transparent,#000_22%,#000_78%,transparent)]",
+                ing.amount == null && "opacity-45",
               )}
             >
-              <span
-                style={css(
-                  "font-family:var(--font-display);font-weight:800;font-size:40px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums",
-                )}
-              >
-                {ing.amount == null ? "As needed" : formatNumber(ing.amount)}
-              </span>
-              <span style={css("font-size:16px;font-weight:700;color:var(--ink-soft)")}>
-                {unitText}
-              </span>
-            </div>
-            <div
-              style={css(
-                "position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden",
-              )}
-            >
-              <div
-                ref={rulerRef}
-                onScroll={onRulerScroll}
-                onPointerDown={onUserScroll}
-                onTouchStart={onUserScroll}
-                onWheel={onUserScroll}
-                aria-label={`Amount in ${ing.unit}`}
-                className="noscroll"
-                style={css(
-                  "display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent);transition:opacity .2s;opacity:" +
-                    (ing.amount == null ? ".45" : "1"),
-                )}
-              >
-                <div style={css(`flex:none;width:calc(50% - ${TICK / 2}px)`)} />
-                {ticks.map((t) => (
-                  <div
-                    key={t.v}
-                    style={css(
-                      `flex:none;width:${TICK}px;height:66px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;padding-bottom:10px;scroll-snap-align:center`,
-                    )}
-                  >
-                    <span
-                      style={css(
-                        "font-size:11px;font-weight:700;height:13px;line-height:13px;white-space:nowrap;color:" +
-                          (t.on ? "var(--accent)" : "var(--muted)"),
-                      )}
-                    >
-                      {t.major ? formatNumber(t.v) : ""}
-                    </span>
-                    <span
-                      style={css(
-                        "display:block;width:2px;border-radius:1px;height:" +
-                          (t.major ? 24 : 13) +
-                          "px;background:" +
-                          (t.on ? "var(--accent)" : t.major ? "var(--muted)" : "var(--line)"),
-                      )}
-                    />
-                  </div>
-                ))}
-                <div style={css(`flex:none;width:calc(50% - ${TICK / 2}px)`)} />
-              </div>
-              <div
-                style={css(
-                  "position:absolute;left:50%;bottom:6px;width:3px;height:32px;margin-left:-1.5px;border-radius:2px;background:var(--accent);pointer-events:none",
-                )}
-              />
-              <div
-                style={css(
-                  "position:absolute;left:50%;top:0;margin-left:-6px;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid var(--accent);pointer-events:none",
-                )}
-              />
-            </div>
-          </div>
-          <div style={css("display:flex;flex-wrap:wrap;gap:7px")}>
-            {spec.quick.map((v) => {
-              const w = unitWord(ing.unit, v);
-              return (
-                <button
-                  key={v}
-                  onClick={() => setAmount(v)}
-                  style={css(pill(ing.amount != null && Math.abs(ing.amount - v) < 1e-6))}
-                >
-                  {formatNumber(v) + (w ? ` ${w}` : "")}
-                </button>
-              );
-            })}
-            <button
-              onClick={() => setAmount(null)}
-              style={css(
-                pill(ing.amount == null) +
-                  ";border-style:" +
-                  (ing.amount == null ? "solid" : "dashed"),
-              )}
-            >
-              As needed
-            </button>
-          </div>
-        </div>
-
-        <div style={css("display:flex;flex-direction:column;gap:10px")}>
-          <span style={sectionLabel}>Unit</span>
-          <div style={css("display:flex;flex-wrap:wrap;gap:7px;align-items:center")}>
-            {unitRow.map((u) => (
-              <button key={u} onClick={() => setUnit(u)} style={css(pill(ing.unit === u))}>
-                {u}
-              </button>
-            ))}
-            {!moreUnits && (
-              <button
-                onClick={() => setMoreUnits(true)}
-                style={css(
-                  "cursor:pointer;border:none;background:none;color:var(--muted);font-family:var(--font-body);font-size:12.5px;font-weight:600;text-decoration:underline;text-underline-offset:3px;padding:4px 2px",
-                )}
-              >
-                More units
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div style={css("display:flex;flex-direction:column;gap:10px")}>
-          <span style={sectionLabel}>Freshness</span>
-          <div style={css("display:flex;gap:7px")}>
-            {TIERS.map((t) => {
-              const on = ing.tag === t.tag;
-              return (
-                <button
-                  key={t.tag}
-                  onClick={() => onChange({ tag: t.tag })}
-                  style={css(
-                    "flex:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:var(--font-body);font-weight:700;font-size:13px;padding:11px 6px;border-radius:12px;color:var(--ink);border:" +
-                      (on ? `1.5px solid ${t.color}` : "1px solid var(--line)") +
-                      ";background:" +
-                      (on ? t.bg : "var(--card)"),
-                  )}
+              <div className="flex-none" style={{ width: `calc(50% - ${TICK / 2}px)` }} />
+              {ticks.map((t) => (
+                <div
+                  key={t.v}
+                  className="flex h-66 flex-none snap-center flex-col items-center justify-end gap-5 pb-10"
+                  style={{ width: TICK }}
                 >
                   <span
-                    style={css(
-                      "width:8px;height:8px;border-radius:50%;flex:none;background:" + t.color,
+                    className={cx(
+                      "h-13 text-11 leading-[13px] font-bold whitespace-nowrap",
+                      t.on ? "text-accent" : "text-muted",
+                    )}
+                  >
+                    {t.major ? formatNumber(t.v) : ""}
+                  </span>
+                  <span
+                    className={cx(
+                      "block w-2 rounded-full",
+                      t.major ? "h-24" : "h-13",
+                      t.on ? "bg-accent" : t.major ? "bg-muted" : "bg-line",
                     )}
                   />
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-          <div style={css("display:flex;align-items:center;gap:10px")}>
-            <button
-              onClick={() => onChange({ tag: null })}
-              style={css(
-                "flex:none;cursor:pointer;font-family:var(--font-body);font-weight:600;font-size:13px;padding:8px 14px;border-radius:999px;background:transparent;color:" +
-                  (ing.tag == null
-                    ? "var(--ink);border:1.5px solid var(--ink-soft)"
-                    : "var(--muted);border:1px dashed var(--muted)"),
-              )}
-            >
-              Not sure
-            </button>
-            <span style={css("font-size:12px;color:var(--muted);line-height:1.4")}>
-              That&apos;s fine — I&apos;ll go by what usually spoils first.
-            </span>
+                </div>
+              ))}
+              <div className="flex-none" style={{ width: `calc(50% - ${TICK / 2}px)` }} />
+            </div>
+            <div className="pointer-events-none absolute bottom-6 left-1/2 -ml-[1.5px] h-32 w-3 rounded-full bg-accent" />
+            <div className="pointer-events-none absolute top-0 left-1/2 -ml-6 size-0 border-x-6 border-t-7 border-x-transparent border-t-accent" />
           </div>
         </div>
+        <div className="flex flex-wrap gap-7">
+          {spec.quick.map((v) => {
+            const w = unitWord(ing.unit, v);
+            return (
+              <Chip
+                key={v}
+                on={ing.amount != null && Math.abs(ing.amount - v) < 1e-6}
+                onClick={() => setAmount(v)}
+                className={PILL}
+              >
+                {formatNumber(v) + (w ? ` ${w}` : "")}
+              </Chip>
+            );
+          })}
+          <Chip
+            on={ing.amount == null}
+            onClick={() => setAmount(null)}
+            className={cx(PILL, ing.amount != null && "border-dashed")}
+          >
+            As needed
+          </Chip>
+        </div>
       </div>
-    </div>
+
+      <div className="flex flex-col gap-10">
+        <span className="label-caps text-muted">Unit</span>
+        <div className="flex flex-wrap items-center gap-7">
+          {unitRow.map((u) => (
+            <Chip key={u} on={ing.unit === u} onClick={() => setUnit(u)} className={PILL}>
+              {u}
+            </Chip>
+          ))}
+          {!moreUnits && (
+            <TextButton
+              onClick={() => setMoreUnits(true)}
+              className="px-2 py-4 text-13 text-muted"
+            >
+              More units
+            </TextButton>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-10">
+        <span className="label-caps text-muted">Freshness</span>
+        <div className="flex gap-7">
+          {TIERS.map((t) => {
+            const on = ing.tag === t.tag;
+            return (
+              <button
+                key={t.tag}
+                onClick={() => onChange({ tag: t.tag })}
+                className={cx(
+                  "inline-flex flex-1 cursor-pointer items-center justify-center gap-6 rounded-inner px-6 py-11 font-body text-13 font-bold text-ink",
+                  on ? cx("border-[1.5px]", t.picked) : "border border-line bg-card",
+                )}
+              >
+                <span className={cx("size-8 flex-none rounded-full", t.dot)} />
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-10">
+          <button
+            onClick={() => onChange({ tag: null })}
+            className={cx(
+              "flex-none cursor-pointer rounded-full bg-transparent px-14 py-8 font-body text-13 font-semibold",
+              ing.tag == null
+                ? "border-[1.5px] border-ink-soft text-ink"
+                : "border border-dashed border-muted text-muted",
+            )}
+          >
+            Not sure
+          </button>
+          <span className="text-12 leading-[1.4] text-muted">
+            That&apos;s fine — I&apos;ll go by what usually spoils first.
+          </span>
+        </div>
+      </div>
+    </Sheet>
   );
 }

@@ -66,7 +66,7 @@ export function VoiceSheet({
       onClose={dismissable ? onCancel : undefined}
       className="items-center gap-16 px-22 pt-24 pb-26"
     >
-      <div className="text-center font-display text-[22px] font-extrabold text-ink">
+      <div className="text-center font-display text-22 font-extrabold text-ink">
         {voiceState === "error" && error ? error.title : voiceTitle}
       </div>
 
@@ -75,7 +75,7 @@ export function VoiceSheet({
           {[0, 1, 2, 3, 4, 5, 6].map((i) => (
             <span
               key={i}
-              className="h-14 w-6 animate-wave rounded-[3px] bg-accent"
+              className="h-14 w-6 animate-wave rounded-full bg-accent"
               style={{ animationDelay: `${i * 0.09}s` }}
             />
           ))}
@@ -127,14 +127,14 @@ export function VoiceSheet({
                     ? "e.g. make it for four"
                     : "half a cabbage that's wilting, three eggs, leftover rice…"
               }
-              className="w-full resize-none rounded-tile border-[1.5px] border-accent bg-card px-15 py-13 font-body text-[15.5px] leading-[1.5] text-ink outline-none"
+              className="w-full resize-none rounded-tile border-[1.5px] border-accent bg-card px-15 py-13 font-body text-16 leading-[1.5] text-ink outline-none"
             />
           ) : (
-            <div className="w-full rounded-tile border border-line bg-card px-16 py-14 text-[15.5px] leading-[1.5] text-pretty text-ink">
+            <div className="w-full rounded-tile border border-line bg-card px-16 py-14 text-16 leading-[1.5] text-pretty text-ink">
               “{reviewText}”
             </div>
           )}
-          <div className="text-center text-[12.5px] leading-[1.45] text-muted">{reviewHint}</div>
+          <div className="text-center text-13 leading-[1.45] text-muted">{reviewHint}</div>
           <div className="flex w-full gap-10">
             <SecondaryButton
               onClick={reviewEditing ? onReviewRedo : onReviewEdit}
@@ -162,7 +162,7 @@ export function VoiceSheet({
           <div className="flex size-46 items-center justify-center rounded-full bg-rescue-bg text-rescue">
             {error.icon === "mic" ? <MicOff /> : <CloudAlert />}
           </div>
-          <div className="max-w-280 text-center text-[14.5px] leading-[1.45] text-pretty text-ink-soft">
+          <div className="max-w-280 text-center text-15 leading-[1.45] text-pretty text-ink-soft">
             {error.body}
           </div>
           <div className="flex w-full gap-10">
@@ -186,7 +186,7 @@ export function VoiceSheet({
       )}
 
       {voiceState === "listening" && (
-        <div className="text-center text-[11.5px] text-muted">
+        <div className="text-center text-12 text-muted">
           Speak normally — I&apos;ll catch the amounts.
         </div>
       )}

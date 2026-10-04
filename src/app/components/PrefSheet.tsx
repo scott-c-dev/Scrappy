@@ -40,7 +40,7 @@ export function PrefSheet({
 
   return (
     <Sheet onClose={onClose} className="gap-16 px-22 pt-22 pb-26">
-      <div className="font-display text-[21px] font-extrabold text-ink">
+      <div className="font-display text-22 font-extrabold text-ink">
         {PREF_TITLES[prefKey]}
       </div>
       <div className="flex flex-wrap gap-8">

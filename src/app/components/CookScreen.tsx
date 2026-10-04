@@ -75,7 +75,7 @@ export function CookScreen({
             <span
               key={idx}
               className={cx(
-                "h-4 flex-1 rounded-[2px]",
+                "h-4 flex-1 rounded-full",
                 idx <= cookStep ? "bg-accent" : "bg-line",
               )}
             />
@@ -83,7 +83,7 @@ export function CookScreen({
         </div>
       </div>
       <div className="py-2">
-        <p className="font-display text-[26px] leading-[1.22] font-bold text-ink">{step.text}</p>
+        <p className="font-display text-26 leading-[1.22] font-bold text-ink">{step.text}</p>
       </div>
       {step.img && (
         <div>
@@ -105,7 +105,7 @@ export function CookScreen({
                   className="absolute inset-0 size-full object-cover"
                 />
               )}
-              <span className="relative rounded-[8px] bg-[rgba(255,255,255,.78)] px-9 py-5 font-label text-[10px] font-bold tracking-[.04em] text-ink uppercase">
+              <span className="relative rounded-inner bg-[rgba(255,255,255,.78)] px-9 py-5 font-label text-10 font-bold tracking-[.04em] text-ink uppercase">
                 {step.cap || "reference shot"}
               </span>
             </div>

@@ -22,7 +22,7 @@ export function SettingsScreen({ units, onUnits }: SettingsScreenProps) {
           <div className="flex flex-col gap-12 px-16 py-15">
             <div className="flex min-w-0 flex-col gap-2">
               <span className="text-15 font-bold text-ink">Units</span>
-              <span className="text-[12.5px] leading-[1.4] text-ink-soft">
+              <span className="text-13 leading-[1.4] text-ink-soft">
                 {units === "metric"
                   ? "Amounts in g, kg, ml and L"
                   : "Amounts in oz, lb and cups"}

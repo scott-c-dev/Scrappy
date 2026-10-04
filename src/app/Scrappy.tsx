@@ -84,7 +84,7 @@ export default function Scrappy() {
                 ‹
               </HeaderButton>
             )}
-            <span className="font-display text-[20px] font-extrabold text-ink">
+            <span className="font-display text-20 font-extrabold text-ink">
               {s.screen === "settings" ? "Settings" : "Scrappy"}
             </span>
           </div>

@@ -26,7 +26,7 @@ export function DishesScreen({
       <div className="flex min-h-full flex-col items-center justify-center gap-20 px-30 py-40 text-center">
         <Spinner className="size-62 border-4" />
         <div>
-          <div className="font-display text-[23px] font-extrabold text-ink">
+          <div className="font-display text-22 font-extrabold text-ink">
             Raiding your fridge…
           </div>
           <div className="mt-8 max-w-250 text-14 leading-[1.45] text-ink-soft">
@@ -60,7 +60,7 @@ export function DishesScreen({
           >
             <div className="flex items-start justify-between gap-10">
               <div className="min-w-0">
-                <h3 className="font-display text-[21px] leading-[1.1] font-extrabold text-ink">
+                <h3 className="font-display text-22 leading-[1.1] font-extrabold text-ink">
                   {d.name}
                 </h3>
                 <p className="mt-5 text-13 leading-[1.4] text-ink-soft">{d.blurb}</p>
@@ -73,11 +73,11 @@ export function DishesScreen({
                 Swap
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-8 rounded-[10px] bg-rescue-bg px-11 py-7">
-              <span className="font-label text-[9.5px] font-bold tracking-[.05em] text-rescue uppercase">
+            <div className="flex flex-wrap items-center gap-8 rounded-inner bg-rescue-bg px-11 py-7">
+              <span className="font-label text-10 font-bold tracking-[.05em] text-rescue uppercase">
                 Uses up
               </span>
-              <span className="text-[12.5px] font-bold text-ink">
+              <span className="text-13 font-bold text-ink">
                 {(d.rescue || []).join(" · ")}
               </span>
             </div>
@@ -85,7 +85,7 @@ export function DishesScreen({
               {d.uses.map((u, ui) => (
                 <span
                   key={ui}
-                  className="rounded-full border border-line bg-paper px-9 py-4 text-[11.5px] text-ink-soft"
+                  className="rounded-full border border-line bg-paper px-9 py-4 text-12 text-ink-soft"
                 >
                   {u}
                 </span>
@@ -99,7 +99,7 @@ export function DishesScreen({
             )}
           </div>
         ))}
-        <div className="flex items-center justify-center gap-8 pt-4 pb-2 text-center text-[12.5px] text-muted">
+        <div className="flex items-center justify-center gap-8 pt-4 pb-2 text-center text-13 text-muted">
           <span className="size-6 flex-none rounded-full bg-fresh" />
           {rescueLine}
         </div>

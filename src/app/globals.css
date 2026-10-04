@@ -40,6 +40,7 @@
   --radius-tile: var(--radius-sm);
   --radius-card: var(--radius);
   --radius-sheet: 26px;
+  --radius-inner: 10px;
 
   --shadow-*: initial;
   --shadow-raised: var(--shadow-sm);
@@ -56,14 +57,22 @@
   --font-body: 'Hanken Grotesk', sans-serif;
   --font-label: 'Hanken Grotesk', sans-serif;
 
-  /* Body text sizes, named by pixels. */
+  /* The type scale, named by pixels: body 10–16, titles 20–22,
+     headlines 26–40. Stay on it; there are no in-between sizes. */
   --text-*: initial;
+  --text-10: 10px;
   --text-11: 11px;
   --text-12: 12px;
   --text-13: 13px;
   --text-14: 14px;
   --text-15: 15px;
   --text-16: 16px;
+  --text-20: 20px;
+  --text-22: 22px;
+  --text-26: 26px;
+  --text-30: 30px;
+  --text-37: 37px;
+  --text-40: 40px;
 
   --animate-*: initial;
   --animate-spin: spin .8s linear infinite;

@@ -18,7 +18,7 @@ export function FinishSheet({
   return (
     <Sheet finale className="items-start gap-14 px-24 py-28">
       <span className="label-caps text-fresh">Plates down</span>
-      <h2 className="font-display text-[30px] leading-[1.08] font-extrabold text-ink">
+      <h2 className="font-display text-30 leading-[1.08] font-extrabold text-ink">
         Dinner&apos;s handled.
       </h2>
       {(finaleLoading || finaleUrl) && (
@@ -33,7 +33,7 @@ export function FinishSheet({
       )}
       <div className="flex w-full items-start gap-11 rounded-tile bg-rescue-bg px-15 py-14">
         <span className="mt-4 size-9 flex-none rounded-full bg-rescue" />
-        <div className="text-[14.5px] leading-[1.4] font-bold text-ink">{finishText}</div>
+        <div className="text-15 leading-[1.4] font-bold text-ink">{finishText}</div>
       </div>
       <div className="mt-2 flex w-full gap-10">
         <SecondaryButton tone="solid" onClick={onBack} className="px-18 py-14 text-15">

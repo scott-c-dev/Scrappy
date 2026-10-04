@@ -138,9 +138,9 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
 
   return (
     <Sheet onClose={onClose} className="noscroll max-h-[90%] gap-18 overflow-y-auto px-20 pt-14 pb-22">
-      <div className="h-4 w-38 self-center rounded-[2px] bg-line" />
+      <div className="h-4 w-38 self-center rounded-full bg-line" />
       <div className="flex items-center justify-between gap-12">
-        <div className="font-display text-[23px] font-extrabold text-ink">{ing.name}</div>
+        <div className="font-display text-22 font-extrabold text-ink">{ing.name}</div>
         <button
           onClick={onClose}
           className="cursor-pointer rounded-full bg-accent-soft px-16 py-8 font-body text-14 font-bold text-accent"
@@ -153,7 +153,7 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
         <span className="label-caps text-muted">Amount</span>
         <div className="flex flex-col gap-6">
           <div className="flex h-48 items-baseline justify-center gap-7">
-            <span className="font-display text-[40px] leading-none font-extrabold text-ink tabular-nums">
+            <span className="font-display text-40 leading-none font-extrabold text-ink tabular-nums">
               {ing.amount == null ? "As needed" : formatNumber(ing.amount)}
             </span>
             <span className="text-16 font-bold text-ink-soft">{unitText}</span>
@@ -188,7 +188,7 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
                   </span>
                   <span
                     className={cx(
-                      "block w-2 rounded-[1px]",
+                      "block w-2 rounded-full",
                       t.major ? "h-24" : "h-13",
                       t.on ? "bg-accent" : t.major ? "bg-muted" : "bg-line",
                     )}
@@ -197,7 +197,7 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
               ))}
               <div className="flex-none" style={{ width: `calc(50% - ${TICK / 2}px)` }} />
             </div>
-            <div className="pointer-events-none absolute bottom-6 left-1/2 -ml-[1.5px] h-32 w-3 rounded-[2px] bg-accent" />
+            <div className="pointer-events-none absolute bottom-6 left-1/2 -ml-[1.5px] h-32 w-3 rounded-full bg-accent" />
             <div className="pointer-events-none absolute top-0 left-1/2 -ml-6 size-0 border-x-6 border-t-7 border-x-transparent border-t-accent" />
           </div>
         </div>
@@ -236,7 +236,7 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
           {!moreUnits && (
             <TextButton
               onClick={() => setMoreUnits(true)}
-              className="px-2 py-4 text-[12.5px] text-muted"
+              className="px-2 py-4 text-13 text-muted"
             >
               More units
             </TextButton>
@@ -254,7 +254,7 @@ export function AdjustSheet({ ingredient: ing, units, onChange, onClose }: Adjus
                 key={t.tag}
                 onClick={() => onChange({ tag: t.tag })}
                 className={cx(
-                  "inline-flex flex-1 cursor-pointer items-center justify-center gap-6 rounded-[12px] px-6 py-11 font-body text-13 font-bold text-ink",
+                  "inline-flex flex-1 cursor-pointer items-center justify-center gap-6 rounded-inner px-6 py-11 font-body text-13 font-bold text-ink",
                   on ? cx("border-[1.5px]", t.picked) : "border border-line bg-card",
                 )}
               >

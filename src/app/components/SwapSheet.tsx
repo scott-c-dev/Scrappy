@@ -15,8 +15,8 @@ export function SwapSheet({ dishName, onSwap, onVoice, onType, onClose }: SwapSh
   return (
     <Sheet onClose={onClose} className="gap-16 px-22 pt-22 pb-26">
       <div>
-        <div className="font-display text-[21px] font-extrabold text-ink">Swap this dish?</div>
-        <div className="mt-4 text-[13.5px] text-ink-soft">
+        <div className="font-display text-22 font-extrabold text-ink">Swap this dish?</div>
+        <div className="mt-4 text-14 text-ink-soft">
           {dishName} — I&apos;ll still use up what&apos;s on the clock.
         </div>
       </div>

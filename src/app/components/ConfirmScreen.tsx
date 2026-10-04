@@ -66,10 +66,10 @@ export function ConfirmScreen({
       <div className="flex animate-risein flex-col gap-15 px-18 pt-10 pb-8">
         <div>
           <span className="label-caps text-accent">Here&apos;s what I heard</span>
-          <h2 className="mt-4 font-display text-[27px] font-extrabold text-ink">
+          <h2 className="mt-4 font-display text-26 font-extrabold text-ink">
             Sound about right?
           </h2>
-          <p className="mt-6 text-[13.5px] leading-[1.45] text-ink-soft">
+          <p className="mt-6 text-14 leading-[1.45] text-ink-soft">
             Tap × to drop anything. Tap an item to change its amount or
             freshness — totally optional.
           </p>
@@ -98,7 +98,7 @@ export function ConfirmScreen({
                   {ing.tier && (
                     <span
                       className={cx(
-                        "inline-flex items-center gap-5 font-label text-[9.5px] font-bold tracking-[.05em] uppercase",
+                        "inline-flex items-center gap-5 font-label text-10 font-bold tracking-[.05em] uppercase",
                         ing.tier.ink,
                       )}
                     >

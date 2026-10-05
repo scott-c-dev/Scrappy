@@ -6,6 +6,8 @@
     "dev": "next dev --experimental-https",
     "tunnel": "npx cloudflared tunnel --url http://localhost:3000 --http-host-header localhost:3000",
     "tun_dev": "concurrently \"pnpm next dev\" \"pnpm run tunnel\"",
+    "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
+    "tun_dev:clean": "pnpm clean && pnpm tun_dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

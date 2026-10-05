@@ -26,7 +26,6 @@ export default function Scrappy() {
     reviewChange,
     reviewEdit,
     reviewSend,
-    onPhoto,
     typedInput,
     removeIng,
     openAdjust,
@@ -119,7 +118,6 @@ export default function Scrappy() {
           {s.screen === "input" && (
             <InputScreen
               onVoice={() => startVoice("input")}
-              onPhoto={onPhoto}
               onType={typedInput}
             />
           )}

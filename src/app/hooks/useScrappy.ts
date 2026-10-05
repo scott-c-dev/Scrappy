@@ -217,27 +217,6 @@ export function useScrappy() {
     return () => window.removeEventListener("online", onOnline);
   }, [setState]);
 
-  // ── Ingredient ingestion ────────────────────────────────────────────────
-
-  const ingestIngredients = async (input: {
-    transcript?: string;
-    imageBase64?: string;
-  }) => {
-    setState({ error: null });
-    try {
-      const { ingredients } = await parseIngredients(input);
-      setState({ ingredients, screen: "confirm" });
-    } catch {
-      setState({ error: "Couldn't read those ingredients — try again." });
-    }
-  };
-
-  const onPhoto = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => ingestIngredients({ imageBase64: String(reader.result) });
-    reader.readAsDataURL(file);
-  };
-
   // ── Dish swap ───────────────────────────────────────────────────────────
 
   const swap = async (id: string, note?: string) => {
@@ -661,7 +640,6 @@ export function useScrappy() {
     reviewEdit,
     reviewSend,
     // Ingredients
-    onPhoto,
     typedInput,
     removeIng,
     openAdjust,

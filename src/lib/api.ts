@@ -18,11 +18,10 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/* Turn a spoken transcript and/or a fridge photo into structured ingredients
-   with three-tier freshness. */
+/* Turn what the user said (or typed) into structured ingredients with
+   three-tier freshness. */
 export function parseIngredients(input: {
-  transcript?: string;
-  imageBase64?: string;
+  transcript: string;
 }): Promise<{ ingredients: Ingredient[] }> {
   return postJSON("/api/ingredients", input);
 }

@@ -4,8 +4,8 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 
-/* Latest Opus — multimodal (fridge photos) + structured outputs for the recipe
-   schema. The exact model string from the claude-api reference. */
+/* Latest Opus — structured outputs for the ingredient and recipe
+   schemas. The exact model string from the claude-api reference. */
 export const MODEL = "claude-opus-4-8";
 
 let cached: Anthropic | null = null;

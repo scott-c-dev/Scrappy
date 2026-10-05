@@ -3,11 +3,10 @@ import { TextButton } from "./ui";
 
 interface InputScreenProps {
   onVoice: () => void;
-  onPhoto: (file: File) => void;
   onType: () => void;
 }
 
-export function InputScreen({ onVoice, onPhoto, onType }: InputScreenProps) {
+export function InputScreen({ onVoice, onType }: InputScreenProps) {
   return (
     <div className="flex min-h-full flex-col px-22 pt-14 pb-26">
       <div className="flex flex-1 flex-col justify-center gap-8 pt-14 pb-4">
@@ -38,20 +37,6 @@ export function InputScreen({ onVoice, onPhoto, onType }: InputScreenProps) {
             front.
           </div>
         </div>
-        <label className="inline-flex cursor-pointer items-center gap-7 rounded-full border border-line bg-card px-15 py-9 font-body text-13 font-semibold text-ink">
-          📷 Snap a fridge photo
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onPhoto(f);
-              e.target.value = "";
-            }}
-          />
-        </label>
         <TextButton onClick={onType} className="text-13 text-ink-soft">
           or type it instead
         </TextButton>

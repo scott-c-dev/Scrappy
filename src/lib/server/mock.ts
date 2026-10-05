@@ -127,7 +127,7 @@ function tagFrom(clause: string): FreshnessTag {
   return null; // not sure
 }
 
-export function mockIngredients(transcript: string, hasImage: boolean): Ingredient[] {
+export function mockIngredients(transcript: string): Ingredient[] {
   const text = transcript.toLowerCase();
   const seen = new Set<string>();
   const out: Ingredient[] = [];
@@ -147,13 +147,6 @@ export function mockIngredients(transcript: string, hasImage: boolean): Ingredie
         tag: name === "Leftover rice" ? "use soon" : tagFrom(clause),
       });
     }
-  }
-  if (!out.length && hasImage) {
-    return [
-      { id: "ing-0-cabbage", name: "Cabbage", amount: 0.5, unit: "pcs", tag: "going bad" },
-      { id: "ing-1-eggs", name: "Eggs", amount: 3, unit: "pcs", tag: null },
-      { id: "ing-2-tomatoes", name: "Tomatoes", amount: 2, unit: "pcs", tag: "use soon" },
-    ];
   }
   return out;
 }

@@ -37,66 +37,40 @@ const SCHEMA: Record<string, unknown> = {
 
 const SYSTEM = `You extract a kitchen ingredient list for an anti-food-waste cooking app.
 
-From the user's spoken description and/or a fridge photo, list each distinct edible ingredient with:
+From the user's description of what's in their fridge, list each distinct edible ingredient with:
 - name: a short, title-case food name (e.g. "Tomatoes", "Leftover rice").
 - amount and unit, only as the user stated them — never invent an amount:
   - hasAmount: false when no amount was given (then amount = 0 and unit = "pcs"); true otherwise.
   - amount: a number ("half" = 0.5, "a couple" = 2, "a dozen" = 12).
   - unit: "pcs" for a plain count ("3 eggs", "half a cabbage"); otherwise the unit they used, as one of g, kg, ml, L, oz, lb, cups, or a singular kitchen word (bunch, clove, can, slice, block, bowl, head, pack…). Keep their unit even if it mixes metric and imperial; don't convert.
-- freshness — only what the user told you (or what the photo clearly shows). Don't guess from the kind of food:
-  - "going bad": they said it's spoiling/wilting/expiring, or the photo clearly shows it past its best.
+- freshness — only what the user told you. Don't guess from the kind of food:
+  - "going bad": they said it's spoiling/wilting/expiring.
   - "use soon": leftovers, opened or cut items, or vague hints like "bought last week" or "a bit old".
   - "fresh": they said it's fresh or just bought.
   - "not sure": they said nothing about its freshness. This is the default.
 
-Only list ingredients actually mentioned or visibly present. Do not add staples (oil, salt, etc.) or anything not stated/shown.`;
-
-const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
-type ImageMediaType = (typeof IMAGE_TYPES)[number];
-
-function imageBlock(imageBase64: string): Anthropic.ImageBlockParam {
-  // Accept a bare base64 string or a full data URL.
-  const m = imageBase64.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]*)$/);
-  const declared = m?.[1];
-  const media_type: ImageMediaType =
-    declared && (IMAGE_TYPES as readonly string[]).includes(declared)
-      ? (declared as ImageMediaType)
-      : "image/jpeg";
-  const data = m ? m[2] : imageBase64;
-  return { type: "image", source: { type: "base64", media_type, data } };
-}
+Only list ingredients actually mentioned. Do not add staples (oil, salt, etc.) or anything not stated.`;
 
 export async function POST(req: Request) {
-  let body: { transcript?: string; imageBase64?: string };
+  let body: { transcript?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
 
-  const { transcript, imageBase64 } = body;
-  if (!transcript && !imageBase64) {
-    return NextResponse.json(
-      { error: "provide a transcript or an imageBase64" },
-      { status: 400 },
-    );
+  const transcript = body.transcript?.trim();
+  if (!transcript) {
+    return NextResponse.json({ error: "provide a transcript" }, { status: 400 });
   }
 
   if (mockAI()) {
     await mockDelay();
     return NextResponse.json({
-      ingredients: mockIngredients(transcript ?? "", !!imageBase64),
+      ingredients: mockIngredients(transcript),
     });
   }
 
-  const content: Anthropic.ContentBlockParam[] = [];
-  if (imageBase64) content.push(imageBlock(imageBase64));
-  content.push({
-    type: "text",
-    text: transcript
-      ? `Here is what the user said is in their fridge: "${transcript}". Extract the ingredient list.`
-      : "Extract the ingredient list from this fridge photo.",
-  });
 
   try {
     const res = await claude().messages.create({
@@ -105,7 +79,12 @@ export async function POST(req: Request) {
       thinking: { type: "adaptive" },
       system: SYSTEM,
       output_config: { format: { type: "json_schema", schema: SCHEMA } },
-      messages: [{ role: "user", content }],
+      messages: [
+        {
+          role: "user",
+          content: `Here is what the user said is in their fridge: "${transcript}". Extract the ingredient list.`,
+        },
+      ],
     });
 
     const text =

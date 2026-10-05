@@ -2,7 +2,7 @@
 
 > **Scrappy doesn't tell you what you can cook — it tells you what you can eat tonight using the rotting stuff in your fridge.**
 
-Say what's in your fridge (by voice or a photo). Scrappy designs a couple of dishes
+Say what's in your fridge. Scrappy designs a couple of dishes
 **around the ingredients that are about to spoil**, using **only what you already
 have** — no shopping trip — and walks you through cooking with step-by-step
 reference images. Anti-waste is the driver of the whole flow, not a footnote.
@@ -11,8 +11,8 @@ A mobile-first PWA built for the Berkeley AI Hackathon (Social Impact / Food Was
 
 ## What it does
 
-- **Voice-first input** (Deepgram) — tap and say what you've got; typing and a
-  **fridge photo** (multimodal vision) are fallbacks.
+- **Voice-first input** (Deepgram) — tap and say what you've got; typing is the
+  fallback.
 - **Three-tier freshness** — every ingredient is tagged `going bad` (rescue first),
   `use soon`, or fresh, and you can tap a chip to correct it.
 - **Constraint-solving recipes** (Claude) — dishes use **only your ingredients +
@@ -39,7 +39,7 @@ src/lib/api.ts  (browser fetch)  ──►  src/app/api/*/route.ts  (server prox
 | Route | Does |
 |---|---|
 | `POST /api/transcribe` | Proxies recorded audio to **Deepgram** STT. |
-| `POST /api/ingredients` | **Claude** parses a transcript or fridge photo → ingredients + freshness. |
+| `POST /api/ingredients` | **Claude** parses a transcript → ingredients + freshness. |
 | `POST /api/recipes` | **Claude** generates dishes/steps under the hard ingredient constraint, with a server-side **validation pass**; also handles single-dish **swap** (with an optional spoken note). |
 | `POST /api/preference` | Maps a spoken phrase to a preference value. |
 | `POST /api/images` | Generates step/finale images via **Midjourney's MCP server** (the backend acts as an MCP client). |

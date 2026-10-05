@@ -6,8 +6,7 @@ Say what's in your fridge. Scrappy designs a couple of dishes
 **around the ingredients that are about to spoil**, using **only what you already
 have** — no shopping trip — and walks you through cooking with step-by-step
 reference images. Anti-waste is the driver of the whole flow, not a footnote.
-
-A mobile-first PWA, started at the Berkeley AI Hackathon (Social Impact / Food Waste).
+It's a mobile-first PWA.
 
 ## What it does
 
@@ -166,7 +165,7 @@ credit.
 | `pnpm midjourney:probe` | List the MCP tools + run a sample image generation |
 | `node scripts/e2e.mjs` | Playwright walkthrough (input → confirm → dishes → cook → finish) |
 
-## Demo path
+## Try it
 
 Speak or type: *"two tomatoes, half a cabbage that's going bad, three eggs, a block
 of tofu that's going bad, scallions, and a bowl of leftover rice."* Scrappy marks

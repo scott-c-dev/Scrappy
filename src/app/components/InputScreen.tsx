@@ -32,7 +32,7 @@ export function InputScreen({ onVoice, onType }: InputScreenProps) {
           <div className="mt-3 text-13 text-muted">
             e.g. “half a cabbage that&apos;s wilting, three eggs, leftover rice”
           </div>
-          <div className="mt-7 max-w-260 text-13 leading-[1.4] text-ink-soft">
+          <div className="mx-auto mt-7 max-w-260 text-13 leading-[1.4] text-ink-soft">
             Mention anything that needs using up — I&apos;ll bump it to the
             front.
           </div>

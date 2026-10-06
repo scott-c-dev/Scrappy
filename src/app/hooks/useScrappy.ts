@@ -54,6 +54,8 @@ export interface ScrappyState {
   adjustId: string | null;
   /* Which units the adjust card offers and recipes are written in. */
   units: UnitSystem;
+  /* Step and finale pictures; off means they're never generated. */
+  stepPics: boolean;
   prefs: Prefs;
   dishes: Dish[];
   dishesLoading: boolean;
@@ -91,6 +93,7 @@ const INITIAL: ScrappyState = {
   ingredients: [],
   adjustId: null,
   units: "metric",
+  stepPics: true,
   prefs: { servings: 2, courses: 3, diet: "No restrictions", allergy: "None" },
   dishes: [],
   dishesLoading: false,
@@ -130,6 +133,7 @@ const typedTitle = (ctx: VoiceContext) =>
 const HEARD_TITLE = "Here’s what I heard";
 
 const UNITS_KEY = "scrappy.units";
+const PICS_KEY = "scrappy.stepPics";
 
 // The unit system is remembered on this device; until it's set, it follows
 // the phone's region.
@@ -142,16 +146,27 @@ function savedUnits(): UnitSystem {
   return defaultUnitSystem();
 }
 
+// Step pictures are on unless this device turned them off.
+function savedPics(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return localStorage.getItem(PICS_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
 // A failed request is the connection's fault if the browser says it's offline.
 const requestFailure = (): VoiceErrorKind =>
   navigator.onLine ? "service" : "offline";
 
 export function useScrappy() {
-  // Nothing on the first screen shows units, so reading them here can't make
-  // the server and browser render differently.
+  // Nothing on the first screen shows these settings, so reading them here
+  // can't make the server and browser render differently.
   const [state, setRaw] = useState<ScrappyState>(() => ({
     ...INITIAL,
     units: savedUnits(),
+    stepPics: savedPics(),
   }));
 
   // Mirror of the latest committed state so async callbacks can read fresh
@@ -201,6 +216,13 @@ export function useScrappy() {
       localStorage.setItem(UNITS_KEY, units);
     } catch {}
     setState({ units });
+  };
+
+  const setStepPics = (stepPics: boolean) => {
+    try {
+      localStorage.setItem(PICS_KEY, stepPics ? "on" : "off");
+    } catch {}
+    setState({ stepPics });
   };
 
   const openSettings = () => setState({ screen: "settings" });
@@ -539,6 +561,7 @@ export function useScrappy() {
   // roughly as the cook reaches each step. Failed generations degrade
   // gracefully to the caption card.
   const genImages = (di: number) => {
+    if (!stateRef.current.stepPics) return;
     const dish = stateRef.current.dishes[di];
     const steps = dish?.steps ?? [];
     const loads: Record<string, "loading" | "ready"> = {};
@@ -584,6 +607,7 @@ export function useScrappy() {
 
   const openFinish = () => {
     setState({ finishOpen: true });
+    if (!stateRef.current.stepPics) return;
     if (stateRef.current.finaleUrl || stateRef.current.finaleLoading) return;
     const dish =
       stateRef.current.dishes[stateRef.current.cookDish] ??
@@ -626,7 +650,11 @@ export function useScrappy() {
     turn.current++;
     voiceRef.current?.cancel();
     clearCt();
-    setRaw({ ...INITIAL, units: stateRef.current.units });
+    setRaw({
+      ...INITIAL,
+      units: stateRef.current.units,
+      stepPics: stateRef.current.stepPics,
+    });
   };
 
   return {
@@ -664,6 +692,7 @@ export function useScrappy() {
     // Settings
     openSettings,
     setUnits,
+    setStepPics,
     // Navigation
     back,
     restart,

@@ -46,6 +46,7 @@ export default function Scrappy() {
     prevStep,
     openSettings,
     setUnits,
+    setStepPics,
     back,
     restart,
     setState,
@@ -122,7 +123,12 @@ export default function Scrappy() {
             />
           )}
           {s.screen === "settings" && (
-            <SettingsScreen units={s.units} onUnits={setUnits} />
+            <SettingsScreen
+              units={s.units}
+              onUnits={setUnits}
+              stepPics={s.stepPics}
+              onStepPics={setStepPics}
+            />
           )}
           {s.screen === "confirm" && (
             <ConfirmScreen
@@ -153,6 +159,7 @@ export default function Scrappy() {
               cookStep={s.cookStep}
               imgState={s.imgState}
               imgUrls={s.imgUrls}
+              pictures={s.stepPics}
               onSetDish={setCookDish}
               onNext={nextStep}
               onPrev={prevStep}

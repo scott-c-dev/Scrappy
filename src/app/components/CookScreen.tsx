@@ -8,6 +8,8 @@ interface CookScreenProps {
   cookStep: number;
   imgState: Record<string, "loading" | "ready">;
   imgUrls: Record<string, string>;
+  /* The Step pictures setting. Off: text only, and no "no photo needed" note. */
+  pictures: boolean;
   onSetDish: (i: number) => void;
   onNext: () => void;
   onPrev: () => void;
@@ -19,6 +21,7 @@ export function CookScreen({
   cookStep,
   imgState,
   imgUrls,
+  pictures,
   onSetDish,
   onNext,
   onPrev,
@@ -30,6 +33,7 @@ export function CookScreen({
   const imgSt = imgState[imgKey];
   const imgUrl = imgUrls[imgKey];
   const curDish = dishes[di] || ({} as Dish);
+  const showImage = pictures && step.img;
 
   const nextLabel =
     cookStep < stepsArr.length - 1
@@ -85,7 +89,7 @@ export function CookScreen({
       <div className="py-2">
         <p className="font-display text-26 leading-[1.22] font-bold text-ink">{step.text}</p>
       </div>
-      {step.img && (
+      {showImage && (
         <div>
           {imgSt !== "ready" ? (
             <div className="relative flex h-184 w-full flex-col items-center justify-center gap-11 overflow-hidden rounded-tile bg-accent-soft">
@@ -112,7 +116,7 @@ export function CookScreen({
           )}
         </div>
       )}
-      {!step.img && (
+      {pictures && !step.img && (
         <div className="flex items-center gap-8 py-2 text-12 text-muted">
           <span className="size-5 flex-none rounded-full bg-fresh" />
           No photo needed here — you&apos;ve got this.

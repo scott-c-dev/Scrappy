@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --conditions=react-server --test --test-reporter=spec tests/*.test.mts",
     "midjourney:auth": "tsx scripts/midjourney-auth.ts",
     "midjourney:probe": "tsx scripts/mj-probe.ts"
   },
@@ -23,6 +24,7 @@
     "openai": "^7.23.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "server-only": "^0.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

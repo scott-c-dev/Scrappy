@@ -185,6 +185,7 @@ credit.
 | `pnpm clean` | Delete `.next` — fixes a dev server serving stale styles after restarts |
 | `pnpm tun_dev:clean` | `clean`, then `tun_dev` |
 | `pnpm lint` | ESLint |
+| `pnpm test` | LLM layer tests: real routes against a fake LLM server, both API formats — no key or credits needed |
 | `pnpm midjourney:auth` | One-time Midjourney OAuth login (saves tokens to `.mcp-auth/`) |
 | `pnpm midjourney:probe` | List the MCP tools + run a sample image generation |
 | `node scripts/e2e.mjs` | Playwright walkthrough (input → confirm → dishes → cook → finish) |

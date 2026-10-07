@@ -1,39 +1,25 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { claude, MODEL } from "@/lib/server/claude";
+import { z } from "zod";
+import { generateJson } from "@/lib/server/llm";
 import { mockAI, mockDelay, mockIngredients } from "@/lib/server/mock";
 import type { FreshnessTag, Ingredient } from "@/lib/types";
 
 export const runtime = "nodejs";
 
-/* Structured-output schema: Claude must return exactly this shape. `freshness`
-   is a string enum (JSON-schema-friendly) mapped back to the nullable
-   FreshnessTag below; `hasAmount` says whether `amount` means anything. */
-const SCHEMA: Record<string, unknown> = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    ingredients: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: { type: "string" },
-          hasAmount: { type: "boolean" },
-          amount: { type: "number" },
-          unit: { type: "string" },
-          freshness: {
-            type: "string",
-            enum: ["going bad", "use soon", "fresh", "not sure"],
-          },
-        },
-        required: ["name", "hasAmount", "amount", "unit", "freshness"],
-      },
-    },
-  },
-  required: ["ingredients"],
-};
+/* Structured-output schema: the model must return exactly this shape.
+   `freshness` is a string enum (JSON-schema-friendly) mapped back to the
+   nullable FreshnessTag below; `hasAmount` says whether `amount` means anything. */
+const SCHEMA = z.object({
+  ingredients: z.array(
+    z.object({
+      name: z.string(),
+      hasAmount: z.boolean(),
+      amount: z.number(),
+      unit: z.string(),
+      freshness: z.enum(["going bad", "use soon", "fresh", "not sure"]),
+    }),
+  ),
+});
 
 const SYSTEM = `You extract a kitchen ingredient list for an anti-food-waste cooking app.
 
@@ -71,34 +57,13 @@ export async function POST(req: Request) {
     });
   }
 
-
   try {
-    const res = await claude().messages.create({
-      model: MODEL,
-      max_tokens: 2000,
-      thinking: { type: "adaptive" },
+    const parsed = await generateJson({
       system: SYSTEM,
-      output_config: { format: { type: "json_schema", schema: SCHEMA } },
-      messages: [
-        {
-          role: "user",
-          content: `Here is what the user said is in their fridge: "${transcript}". Extract the ingredient list.`,
-        },
-      ],
+      user: `Here is what the user said is in their fridge: "${transcript}". Extract the ingredient list.`,
+      schema: SCHEMA,
+      maxTokens: 2000,
     });
-
-    const text =
-      res.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ??
-      "{}";
-    const parsed = JSON.parse(text) as {
-      ingredients: {
-        name: string;
-        hasAmount: boolean;
-        amount: number;
-        unit: string;
-        freshness: string;
-      }[];
-    };
 
     const tagFor = (f: string): FreshnessTag =>
       f === "going bad" || f === "use soon" || f === "fresh" ? f : null;

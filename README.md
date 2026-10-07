@@ -20,7 +20,7 @@ It's a mobile-first PWA.
 - **Optional adjustments** — tap an item to change its amount (a ruler, quick
   picks or "as needed"), unit or freshness. Units follow your region (metric or
   imperial, changeable in Settings), and a unit you said ("a block of tofu") is kept.
-- **Constraint-solving recipes** (Claude) — dishes use **only your ingredients +
+- **Constraint-solving recipes** (Claude, or any OpenAI-compatible LLM) — dishes use **only your ingredients +
   basic pantry staples**. A server-side validation pass blocks any ingredient the
   model tries to sneak in (the anti-waste moat — see below).
 - **Waste-prevention narrative up front** — "Your cabbage and tofu are on the
@@ -71,8 +71,8 @@ reaches the server.
 
 | Route | Does |
 |---|---|
-| `POST /api/ingredients` | **Claude** parses a transcript → ingredients, amounts, units + freshness. |
-| `POST /api/recipes` | **Claude** generates dishes/steps under the hard ingredient constraint, with a server-side **validation pass**; also handles single-dish **swap** (with an optional note). |
+| `POST /api/ingredients` | The **LLM** parses a transcript → ingredients, amounts, units + freshness. |
+| `POST /api/recipes` | The **LLM** generates dishes/steps under the hard ingredient constraint, with a server-side **validation pass**; also handles single-dish **swap** (with an optional note). |
 | `POST /api/preference` | Maps a spoken phrase to a preference value (servings, dishes, diet, allergies). |
 | `POST /api/images` | Generates step/finale images via **Midjourney's MCP server** (the backend acts as an MCP client). |
 | `POST /api/transcribe` | **Deepgram** speech-to-text for browsers without the Web Speech API. Switched off for now (`DEEPGRAM_FALLBACK_ENABLED` in `src/lib/voice.ts`). |
@@ -83,7 +83,8 @@ Styling is Tailwind with the design's tokens and type scale defined in
 `src/app/globals.css`; shared pieces (sheet, buttons, chips) are in
 `src/app/components/ui.tsx`.
 
-**Server:** `src/lib/server/claude.ts`, `src/lib/server/midjourney.ts`
+**Server:** `src/lib/server/llm.ts` (one JSON-schema call, in either API format),
+`src/lib/server/midjourney.ts`
 (+ `mcp-oauth.ts`), `src/lib/server/mock.ts` (mock mode) and `src/lib/staples.ts`
 (the staples whitelist + the validation normaliser).
 
@@ -99,14 +100,15 @@ groceries.
 ## Tech stack
 
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind v4 · PWA ·
-Web Speech API · Anthropic SDK (`claude-opus-4-8`) · Midjourney via
+Web Speech API · Anthropic SDK or OpenAI SDK (Chat Completions) · zod · Midjourney via
 `@modelcontextprotocol/sdk` · Deepgram (optional fallback).
 
 ## Getting started
 
 ### Prerequisites
 - Node 20+ and **pnpm**
-- An **Anthropic** API key
+- An LLM API key: **Anthropic**, **OpenAI**, or any vendor with an
+  OpenAI-compatible Chat Completions API (see "Choosing an LLM")
 - Optional: a **Midjourney** account for step images (its MCP server is
   OAuth-gated — there is no API key). Without it, steps show caption cards.
 - Optional: a **Deepgram** key, only if you re-enable the speech fallback.
@@ -122,11 +124,33 @@ Copy the template and fill it in (`.env.local` is gitignored):
 cp .env.example .env.local
 ```
 ```
-ANTHROPIC_API_KEY=...
+LLM_API_FORMAT=anthropic                             # or openai-chat
+LLM_API_KEY=...
 # DEEPGRAM_API_KEY=...                                 # only for the fallback
 # MIDJOURNEY_MCP_URL=https://mcp.midjourney.com/mcp   # optional override
 # MOCK_AI=1                                            # see "Mock mode"
 ```
+
+#### Choosing an LLM
+Every AI call is one system prompt, one message and a JSON reply checked against a
+schema, so Scrappy works with two API formats:
+
+| `LLM_API_FORMAT` | Talks to | Default model (official URL) |
+|---|---|---|
+| `anthropic` (default) | Claude's Messages API | `claude-sonnet-5` |
+| `openai-chat` | OpenAI's Chat Completions — also DeepSeek, Groq, OpenRouter, Ollama, vLLM… | `gpt-6-luna` (reasoning `low`) |
+
+- **Another vendor:** set `LLM_BASE_URL` to its endpoint and `LLM_MODEL` to one of
+  its model names (required once the URL isn't the official one).
+- **Reasoning:** unset `LLM_EFFORT` sends no reasoning settings — cheapest, and
+  accepted by every model. Set `low` / `medium` / `high` to let the model think
+  more; only models that support it accept it.
+- **No JSON-schema support?** Some vendors only offer a plain JSON mode:
+  `LLM_JSON_MODE=object` puts the schema in the prompt instead. Either way the
+  reply is checked against the schema, and a bad one becomes the app's normal
+  "something went wrong" message.
+- Weaker models add ingredients you don't have more often; the validation pass
+  still catches them, but recipe quality depends on the model you pick.
 
 ### 3. Authorize Midjourney (optional, one-time per machine)
 Midjourney has no API key — auth is OAuth. Run the one-time login; it opens a
@@ -161,6 +185,7 @@ credit.
 | `pnpm clean` | Delete `.next` — fixes a dev server serving stale styles after restarts |
 | `pnpm tun_dev:clean` | `clean`, then `tun_dev` |
 | `pnpm lint` | ESLint |
+| `pnpm test` | LLM layer tests: real routes against a fake LLM server, both API formats — no key or credits needed |
 | `pnpm midjourney:auth` | One-time Midjourney OAuth login (saves tokens to `.mcp-auth/`) |
 | `pnpm midjourney:probe` | List the MCP tools + run a sample image generation |
 | `node scripts/e2e.mjs` | Playwright walkthrough (input → confirm → dishes → cook → finish) |

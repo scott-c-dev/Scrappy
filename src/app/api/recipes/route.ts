@@ -1,6 +1,6 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { claude, MODEL } from "@/lib/server/claude";
+import { z } from "zod";
+import { generateJson } from "@/lib/server/llm";
 import { mockAI, mockDelay, mockDishes, mockSwap } from "@/lib/server/mock";
 import { allowedSet, normalize, STAPLES } from "@/lib/staples";
 import type { Dish, Ingredient, Prefs, Step } from "@/lib/types";
@@ -23,53 +23,25 @@ interface Body {
   note?: string;
 }
 
-const DISH_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    name: { type: "string" },
-    short: { type: "string" },
-    blurb: { type: "string" },
-    rescue: { type: "array", items: { type: "string" } },
-    uses: { type: "array", items: { type: "string" } },
-    steps: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          text: { type: "string" },
-          needsImage: { type: "boolean" },
-          cap: { type: "string" },
-          imagePrompt: { type: "string" },
-        },
-        required: ["text", "needsImage"],
-      },
-    },
-  },
-  required: ["name", "short", "blurb", "rescue", "uses", "steps"],
-};
+const DISH_SCHEMA = z.object({
+  name: z.string(),
+  short: z.string(),
+  blurb: z.string(),
+  rescue: z.array(z.string()),
+  uses: z.array(z.string()),
+  steps: z.array(
+    z.object({
+      text: z.string(),
+      needsImage: z.boolean(),
+      cap: z.string().optional(),
+      imagePrompt: z.string().optional(),
+    }),
+  ),
+});
 
-const SCHEMA: Record<string, unknown> = {
-  type: "object",
-  additionalProperties: false,
-  properties: { dishes: { type: "array", items: DISH_SCHEMA } },
-  required: ["dishes"],
-};
+const SCHEMA = z.object({ dishes: z.array(DISH_SCHEMA) });
 
-interface RawDish {
-  name: string;
-  short: string;
-  blurb: string;
-  rescue: string[];
-  uses: string[];
-  steps: {
-    text: string;
-    needsImage: boolean;
-    cap?: string;
-    imagePrompt?: string;
-  }[];
-}
+type RawDish = z.output<typeof DISH_SCHEMA>;
 
 function ingredientLines(ings: Ingredient[]): string {
   return ings
@@ -127,19 +99,13 @@ ${ingredientLines(body.ingredients)}
 
 Design ${count} ${count === 1 ? "dish" : "distinct dishes"} under the hard constraint.${extra}`;
 
-  const res = await claude().messages.create({
-    model: MODEL,
-    max_tokens: 8000,
-    thinking: { type: "adaptive" },
+  const { dishes } = await generateJson({
     system: systemPrompt(body.prefs, body.units === "imperial" ? "imperial" : "metric"),
-    output_config: { format: { type: "json_schema", schema: SCHEMA } },
-    messages: [{ role: "user", content: userText }],
+    user: userText,
+    schema: SCHEMA,
+    maxTokens: 8000,
   });
-
-  const text =
-    res.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ??
-    "{}";
-  return (JSON.parse(text) as { dishes: RawDish[] }).dishes ?? [];
+  return dishes;
 }
 
 /* The §7 validation pass: find ingredients a dish claims to use that are

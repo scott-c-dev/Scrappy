@@ -1,6 +1,6 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { claude, MODEL } from "@/lib/server/claude";
+import { z } from "zod";
+import { generateJson } from "@/lib/server/llm";
 import { mockAI, mockDelay, mockPref } from "@/lib/server/mock";
 
 export const runtime = "nodejs";
@@ -33,27 +33,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ value: mockPref(key, transcript) });
   }
 
-  const choices = OPTIONS[key].map(String);
-  const schema: Record<string, unknown> = {
-    type: "object",
-    additionalProperties: false,
-    properties: { value: { type: "string", enum: choices } },
-    required: ["value"],
-  };
+  const choices = OPTIONS[key].map(String) as [string, ...string[]];
 
   try {
-    const res = await claude().messages.create({
-      model: MODEL,
-      max_tokens: 500,
+    const { value: raw } = await generateJson({
       system: `Map the user's short spoken phrase to exactly one of these allowed ${key} options: ${choices.join(", ")}. Choose the closest match.`,
-      output_config: { format: { type: "json_schema", schema } },
-      messages: [{ role: "user", content: `They said: "${transcript}"` }],
+      user: `They said: "${transcript}"`,
+      schema: z.object({ value: z.enum(choices) }),
+      maxTokens: 500,
+      reasoning: false,
     });
-
-    const text =
-      res.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ??
-      "{}";
-    const raw = (JSON.parse(text) as { value: string }).value;
     // Coerce numeric prefs back to numbers.
     const numeric = key === "servings" || key === "courses";
     const value: string | number = numeric ? Number(raw) : raw;

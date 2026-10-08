@@ -1,25 +1,17 @@
-/* Server-only LLM client. Imported exclusively by route handlers so the API key
-   never reaches the client bundle.
+/* Server-only LLM client. The user's AI settings (their own key — "bring your
+   own key") arrive with each request; nothing is stored or logged here.
 
    Every call Scrappy makes has the same shape — a system prompt, one user
    message, and a JSON reply matching a schema — so one function covers both
    API formats: Anthropic's Messages API, and OpenAI's Chat Completions, which
-   most other vendors (and local servers) also speak.
-
-   Configured in .env.local (see .env.example):
-     LLM_API_FORMAT   anthropic (default) | openai-chat
-     LLM_API_KEY      required
-     LLM_BASE_URL     default: the format's official URL
-     LLM_MODEL        default: a cheap current model, on the official URL only
-     LLM_EFFORT       unset = no reasoning params sent (cheapest, works anywhere)
-     LLM_JSON_MODE    openai-chat only: schema (default) | object */
+   most other vendors (and local servers) also speak. */
 
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { z } from "zod";
-
-type ApiFormat = "anthropic" | "openai-chat";
+import { DEFAULT_MODEL, type ApiFormat } from "@/lib/ai";
+import { assertPublicUrl, PrivateAddressError } from "./netguard";
 
 export interface LlmConfig {
   format: ApiFormat;
@@ -33,44 +25,117 @@ export interface LlmConfig {
   jsonMode: "schema" | "object";
 }
 
-/* Used only when talking to the official endpoint and no model is set. The
-   OpenAI default model's own reasoning default is medium, so it comes with a
-   known-good effort; a model you pick yourself gets only the effort you set. */
-const DEFAULTS: Record<ApiFormat, { model: string; effort?: string }> = {
-  anthropic: { model: "claude-sonnet-5" },
-  "openai-chat": { model: "gpt-6-luna", effort: "low" },
-};
-
 const OFFICIAL_URL: Record<ApiFormat, string> = {
   anthropic: "https://api.anthropic.com",
   "openai-chat": "https://api.openai.com/v1",
 };
 
-const env = (name: string) => process.env[name]?.trim() || undefined;
+/* What went wrong, in the terms the app shows people. */
+export type LlmFailureKind =
+  | "refused" // key rejected
+  | "credit" // out of credit, or rate-limited
+  | "modelNotFound"
+  | "unreachable"
+  | "privateAddress"
+  | "service"; // anything else, incl. a reply we couldn't use
 
-export function llmConfig(): LlmConfig {
-  const format = env("LLM_API_FORMAT") ?? "anthropic";
-  if (format !== "anthropic" && format !== "openai-chat") {
-    throw new Error(`LLM_API_FORMAT must be "anthropic" or "openai-chat" (got "${format}")`);
+export class LlmError extends Error {
+  constructor(
+    readonly kind: LlmFailureKind,
+    message: string,
+  ) {
+    super(message);
   }
-  const apiKey = env("LLM_API_KEY");
-  if (!apiKey) throw new Error("LLM_API_KEY is not set");
-
-  const baseURL = env("LLM_BASE_URL")?.replace(/\/+$/, "");
-  const official = !baseURL || baseURL === OFFICIAL_URL[format];
-  let model = env("LLM_MODEL");
-  let effort = env("LLM_EFFORT");
-  if (!model) {
-    if (!official) throw new Error("LLM_MODEL is required when LLM_BASE_URL is set");
-    model = DEFAULTS[format].model;
-    effort ??= DEFAULTS[format].effort;
-  }
-  const jsonMode = env("LLM_JSON_MODE") === "object" ? "object" : "schema";
-  return { format, apiKey, baseURL, model, effort, jsonMode };
 }
 
-/* A reply we couldn't use. Routes turn it into their normal 502. */
-export class LlmReplyError extends Error {}
+const SETTINGS = z.object({
+  provider: z.enum(["claude", "openai", "custom"]),
+  key: z.string().max(1000),
+  model: z.string().max(200).nullable(),
+  format: z.enum(["anthropic", "openai-chat"]),
+  baseURL: z.string().max(1000),
+  effort: z.enum(["low", "medium", "high"]).nullable(),
+  jsonMode: z.boolean(),
+});
+
+/* Turns the settings sent from the device into a request config. */
+export function llmConfig(input: unknown): LlmConfig {
+  const parsed = SETTINGS.safeParse(input);
+  if (!parsed.success) throw new LlmError("service", "the AI service isn't set up");
+  const s = parsed.data;
+  const key = s.key.trim();
+  const model = s.model?.trim() || null;
+
+  if (s.provider !== "custom") {
+    if (!key) throw new LlmError("refused", "no API key");
+    const format = s.provider === "claude" ? "anthropic" : "openai-chat";
+    return {
+      format,
+      apiKey: key,
+      baseURL: undefined,
+      model: model ?? DEFAULT_MODEL[s.provider],
+      // OpenAI's default model reasons at medium unless told otherwise, so it
+      // comes with low; a model someone picked gets no reasoning setting.
+      effort: s.provider === "openai" && !model ? "low" : undefined,
+      jsonMode: "schema",
+    };
+  }
+
+  const baseURL = s.baseURL.trim().replace(/\/+$/, "");
+  if (!/^https?:\/\/\S+$/i.test(baseURL)) throw new LlmError("unreachable", "no valid address");
+  if (!model) throw new LlmError("modelNotFound", "no model chosen");
+  return {
+    format: s.format,
+    apiKey: key,
+    baseURL,
+    model,
+    effort: s.effort ?? undefined,
+    jsonMode: s.jsonMode ? "object" : "schema",
+  };
+}
+
+// Never follow redirects: a public address could otherwise bounce the
+// request to a private one after the address check.
+const noRedirectFetch: typeof fetch = (url, init) => fetch(url, { ...init, redirect: "error" });
+
+async function clientFor(config: LlmConfig, timeout: number) {
+  if (config.baseURL) await assertPublicUrl(config.baseURL);
+  const common = {
+    // Some local servers need no key; the SDKs still want a string.
+    apiKey: config.apiKey || "none",
+    baseURL: config.baseURL ?? OFFICIAL_URL[config.format],
+    fetch: noRedirectFetch,
+    timeout,
+    maxRetries: 1,
+  };
+  return config.format === "anthropic"
+    ? ({ format: "anthropic", client: new Anthropic(common) } as const)
+    : ({ format: "openai-chat", client: new OpenAI(common) } as const);
+}
+
+/* Maps SDK and network errors to what the app shows. Messages never include
+   the key: the SDKs don't echo it, and we don't add it. */
+export function classify(err: unknown): LlmError {
+  if (err instanceof LlmError) return err;
+  if (err instanceof PrivateAddressError) return new LlmError("privateAddress", "private address");
+  if (err instanceof Anthropic.APIConnectionError || err instanceof OpenAI.APIConnectionError) {
+    return new LlmError("unreachable", "couldn't reach the AI service");
+  }
+  if (err instanceof Anthropic.APIError || err instanceof OpenAI.APIError) {
+    const { status, message } = err;
+    if (status === 401 || status === 403) return new LlmError("refused", "the AI key was refused");
+    // OpenAI: 429 insufficient_quota (no credit) or a rate limit.
+    // Anthropic: 400 "credit balance is too low", or 429 rate limit.
+    if (status === 402 || status === 429 || (status === 400 && /credit|billing|quota/i.test(message))) {
+      return new LlmError("credit", "the AI account is out of credit or busy");
+    }
+    if (status === 404) return new LlmError("modelNotFound", "the AI service doesn't offer that model");
+    return new LlmError("service", `the AI service returned ${status ?? "an error"}`);
+  }
+  return new LlmError("service", err instanceof Error ? err.message : "the AI request failed");
+}
+
+// ── Generating JSON ────────────────────────────────────────────────────────
 
 interface JsonRequest<T extends z.ZodType> {
   system: string;
@@ -82,55 +147,47 @@ interface JsonRequest<T extends z.ZodType> {
 }
 
 export async function generateJson<T extends z.ZodType>(
+  config: LlmConfig,
   req: JsonRequest<T>,
 ): Promise<z.output<T>> {
-  const config = llmConfig();
   // Our zod schemas produce plain JSON Schema: objects closed with
   // additionalProperties:false, optional fields left out of `required`.
   const jsonSchema = z.toJSONSchema(req.schema) as Record<string, unknown>;
   delete jsonSchema.$schema;
-  const text =
-    config.format === "anthropic"
-      ? await viaAnthropic(config, req, jsonSchema)
-      : await viaOpenAIChat(config, req, jsonSchema);
+
+  let text: string;
+  try {
+    const api = await clientFor(config, 120_000);
+    text =
+      api.format === "anthropic"
+        ? await viaAnthropic(api.client, config, req, jsonSchema)
+        : await viaOpenAIChat(api.client, config, req, jsonSchema);
+  } catch (err) {
+    throw classify(err);
+  }
 
   let data: unknown;
   try {
     data = JSON.parse(extractJson(text));
   } catch {
-    throw new LlmReplyError("the model's reply wasn't valid JSON");
+    throw new LlmError("service", "the model's reply wasn't valid JSON");
   }
   const parsed = req.schema.safeParse(dropNulls(data));
   if (!parsed.success) {
     console.error("[llm] reply didn't match the schema:", parsed.error.issues);
-    throw new LlmReplyError("the model's reply didn't match the expected shape");
+    throw new LlmError("service", "the model's reply didn't match the expected shape");
   }
   return parsed.data;
 }
 
-// ── Anthropic Messages ─────────────────────────────────────────────────────
-
-let anthropic: { key: string; client: Anthropic } | null = null;
-
 async function viaAnthropic(
+  client: Anthropic,
   config: LlmConfig,
   req: JsonRequest<z.ZodType>,
   schema: Record<string, unknown>,
 ): Promise<string> {
-  const key = `${config.apiKey}|${config.baseURL ?? ""}`;
-  // Reuse one client across requests (keeps connection pooling warm). Passing
-  // the key and URL explicitly stops the SDK falling back to ANTHROPIC_* vars.
-  if (anthropic?.key !== key) {
-    anthropic = {
-      key,
-      client: new Anthropic({
-        apiKey: config.apiKey,
-        baseURL: config.baseURL ?? OFFICIAL_URL.anthropic,
-      }),
-    };
-  }
   const effort = req.reasoning === false ? undefined : config.effort;
-  const res = await anthropic.client.messages.create({
+  const res = await client.messages.create({
     model: config.model,
     max_tokens: req.maxTokens,
     ...(effort && { thinking: { type: "adaptive" } }),
@@ -141,33 +198,20 @@ async function viaAnthropic(
     },
     messages: [{ role: "user", content: req.user }],
   });
-  if (res.stop_reason === "refusal") throw new LlmReplyError("the model declined to answer");
-  if (res.stop_reason === "max_tokens") throw new LlmReplyError("the model ran out of tokens");
+  if (res.stop_reason === "refusal") throw new LlmError("service", "the model declined to answer");
+  if (res.stop_reason === "max_tokens") throw new LlmError("service", "the model ran out of tokens");
   const block = res.content.find((b): b is Anthropic.TextBlock => b.type === "text");
-  if (!block) throw new LlmReplyError("the model returned no text");
+  if (!block) throw new LlmError("service", "the model returned no text");
   return block.text;
 }
 
-// ── OpenAI Chat Completions ────────────────────────────────────────────────
-
-let openai: { key: string; client: OpenAI } | null = null;
-
 async function viaOpenAIChat(
+  client: OpenAI,
   config: LlmConfig,
   req: JsonRequest<z.ZodType>,
   schema: Record<string, unknown>,
 ): Promise<string> {
-  const key = `${config.apiKey}|${config.baseURL ?? ""}`;
-  if (openai?.key !== key) {
-    openai = {
-      key,
-      client: new OpenAI({
-        apiKey: config.apiKey,
-        baseURL: config.baseURL ?? OFFICIAL_URL["openai-chat"],
-      }),
-    };
-  }
-  const official = !config.baseURL || config.baseURL === OFFICIAL_URL["openai-chat"];
+  const official = !config.baseURL;
   const effort = req.reasoning === false ? undefined : config.effort;
 
   // Vendors without json_schema support get the schema in the prompt instead.
@@ -177,7 +221,7 @@ async function viaOpenAIChat(
       ? `${req.system}\n\nReply with only a JSON object that matches this JSON Schema:\n${JSON.stringify(schema)}`
       : req.system;
 
-  const res = await openai.client.chat.completions.create({
+  const res = await client.chat.completions.create({
     model: config.model,
     // OpenAI deprecated max_tokens (its reasoning models reject it); most
     // other vendors still only know max_tokens.
@@ -188,7 +232,11 @@ async function viaOpenAIChat(
         ? { type: "json_object" }
         : {
             type: "json_schema",
-            json_schema: { name: "reply", strict: true, schema: toStrict(schema) as Record<string, unknown> },
+            json_schema: {
+              name: "reply",
+              strict: true,
+              schema: toStrict(schema) as Record<string, unknown>,
+            },
           },
     messages: [
       { role: "system", content: system },
@@ -196,12 +244,39 @@ async function viaOpenAIChat(
     ],
   });
   const choice = res.choices[0];
-  if (choice?.message.refusal) throw new LlmReplyError("the model declined to answer");
-  if (choice?.finish_reason === "length") throw new LlmReplyError("the model ran out of tokens");
+  if (choice?.message.refusal) throw new LlmError("service", "the model declined to answer");
+  if (choice?.finish_reason === "length") throw new LlmError("service", "the model ran out of tokens");
   const text = choice?.message.content;
-  if (!text) throw new LlmReplyError("the model returned no text");
+  if (!text) throw new LlmError("service", "the model returned no text");
   return text;
 }
+
+// ── Listing models (free; used to check a key before saving) ───────────────
+
+/* The models this key can use. null = the service has no model list, so it
+   can't be checked; the key will be tried on first use instead. */
+export async function listModels(config: LlmConfig): Promise<string[] | null> {
+  try {
+    const api = await clientFor(config, 15_000);
+    const ids =
+      api.format === "anthropic"
+        ? (await api.client.models.list({ limit: 1000 })).data.map((m) => m.id)
+        : (await api.client.models.list()).data.map((m) => m.id);
+    return ids;
+  } catch (err) {
+    if ((err instanceof Anthropic.APIError || err instanceof OpenAI.APIError) && err.status === 404) {
+      return null;
+    }
+    throw classify(err);
+  }
+}
+
+// Model lists also hold speech, image and embedding models; none can write
+// recipes, so they're left out of the picker.
+const NOT_CHAT = /embed|whisper|tts|dall-e|image|audio|realtime|moderation|transcribe|search|davinci|babbage|sora|computer-use|rerank/i;
+export const chatModels = (ids: string[]) => ids.filter((id) => !NOT_CHAT.test(id)).sort();
+
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 /* OpenAI's strict mode needs every property listed in `required`, so optional
    fields become required-but-nullable. dropNulls() undoes it on the reply. */

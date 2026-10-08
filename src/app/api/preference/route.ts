@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generateJson } from "@/lib/server/llm";
-import { mockAI, mockDelay, mockPref } from "@/lib/server/mock";
+import { aiErrorResponse } from "@/lib/server/aiResponse";
+import { generateJson, llmConfig } from "@/lib/server/llm";
+import { mockAI, mockDelay, mockFailure, mockPref } from "@/lib/server/mock";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ const OPTIONS = {
 type Key = keyof typeof OPTIONS;
 
 export async function POST(req: Request) {
-  let body: { key?: Key; transcript?: string };
+  let body: { key?: Key; transcript?: string; ai?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -30,13 +31,15 @@ export async function POST(req: Request) {
 
   if (mockAI()) {
     await mockDelay(500);
+    const failure = mockFailure(transcript);
+    if (failure) return failure;
     return NextResponse.json({ value: mockPref(key, transcript) });
   }
 
   const choices = OPTIONS[key].map(String) as [string, ...string[]];
 
   try {
-    const { value: raw } = await generateJson({
+    const { value: raw } = await generateJson(llmConfig(body.ai), {
       system: `Map the user's short spoken phrase to exactly one of these allowed ${key} options: ${choices.join(", ")}. Choose the closest match.`,
       user: `They said: "${transcript}"`,
       schema: z.object({ value: z.enum(choices) }),
@@ -48,10 +51,6 @@ export async function POST(req: Request) {
     const value: string | number = numeric ? Number(raw) : raw;
     return NextResponse.json({ value });
   } catch (err) {
-    console.error("[/api/preference]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "preference parsing failed" },
-      { status: 502 },
-    );
+    return aiErrorResponse("/api/preference", err);
   }
 }

@@ -2,21 +2,26 @@
    weight); callers add only layout and size (padding, flex, text size), so
    the classes a caller passes never fight the ones set here. */
 
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
 import { cx } from "@/lib/cx";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement>;
 
 /* A bottom sheet over the app card. Tapping the scrim calls onClose (leave it
-   out to make the scrim inert). The finale sits above everything else. */
+   out to make the scrim inert). The finale sits above everything else.
+   `lift` raises the panel, e.g. above the on-screen keyboard. */
 export function Sheet({
   onClose,
   finale,
+  lift,
+  label,
   className,
   children,
 }: {
   onClose?: () => void;
   finale?: boolean;
+  lift?: number;
+  label?: string;
   className?: string;
   children: ReactNode;
 }) {
@@ -26,6 +31,7 @@ export function Sheet({
         "absolute inset-0 flex flex-col justify-end",
         finale ? "z-40" : "z-30",
       )}
+      style={lift ? { paddingBottom: lift } : undefined}
     >
       <div
         onClick={onClose}
@@ -35,6 +41,8 @@ export function Sheet({
         )}
       />
       <div
+        role={label ? "dialog" : undefined}
+        aria-label={label}
         className={cx(
           "relative flex flex-col rounded-t-sheet bg-paper",
           finale
@@ -147,5 +155,65 @@ export function StickyBar({
     >
       {children}
     </div>
+  );
+}
+
+/* A two- or three-way choice in a pill track (Metric | Imperial, On | Off). */
+export function Segmented<T extends string | boolean>({
+  label,
+  options,
+  value,
+  onPick,
+}: {
+  label: string;
+  options: [T, string][];
+  value: T;
+  onPick: (value: T) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex gap-4 rounded-full border border-line bg-paper p-4"
+    >
+      {options.map(([key, text]) => {
+        const on = value === key;
+        return (
+          <button
+            key={text}
+            role="radio"
+            aria-checked={on}
+            onClick={() => onPick(key)}
+            className={cx(
+              "flex-1 cursor-pointer rounded-full p-10 font-body text-14 font-bold",
+              on ? "bg-accent text-accent-ink" : "bg-transparent text-ink-soft",
+            )}
+          >
+            {text}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* A single-line text field. `on` is the surface it sits on, so it stays
+   visible against it: paper inside a card, card on a sheet. */
+export function TextInput({
+  on = "card",
+  className,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { on?: "card" | "paper" }) {
+  return (
+    <input
+      autoComplete="off"
+      spellCheck={false}
+      {...props}
+      className={cx(
+        "w-full rounded-inner border border-line px-13 py-12 font-body text-15 text-ink outline-none focus:border-accent",
+        on === "card" ? "bg-paper" : "bg-card",
+        className,
+      )}
+    />
   );
 }

@@ -1,30 +1,54 @@
-/* A fake LLM server for tests: answers both Anthropic Messages
-   (POST …/messages) and OpenAI Chat Completions (POST …/chat/completions),
-   records every request, and can be told to misbehave. No credits needed. */
+/* A fake LLM server for tests: answers Anthropic Messages (POST …/messages),
+   OpenAI Chat Completions (POST …/chat/completions) and both model lists
+   (GET …/models), records every request, and can be told to misbehave.
+   No credits needed. */
 import http from "node:http";
+
+export const MODELS = ["claude-sonnet-5-5", "gpt-6-luna", "vendor-model", "text-embedding-3-small"];
 
 export function startFakeLlm() {
   const state = {
     requests: [],
-    /* ok | badjson | wrongshape | fenced | nulls | truncated | refusal | 400 | 401 */
+    /* ok | badjson | wrongshape | fenced | truncated | refusal | redirect
+       | 400 | 400credit | 401 | 402 | 404 | 429 | models404 */
     mode: "ok",
     reply: {},
+    models: MODELS,
   };
   const server = http.createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => (raw += c));
     req.on("end", () => {
       const body = JSON.parse(raw || "{}");
-      state.requests.push({ path: req.url, headers: req.headers, body });
+      state.requests.push({ method: req.method, path: req.url, headers: req.headers, body });
       const send = (code, obj) => {
         res.writeHead(code, { "content-type": "application/json" });
         res.end(JSON.stringify(obj));
       };
+      const fail = (code, message) =>
+        send(code, { type: "error", error: { type: "error", message, code: code === 429 ? "insufficient_quota" : null } });
       const { mode } = state;
-      if (mode === "401")
-        return send(401, { type: "error", error: { type: "authentication_error", message: "invalid key" } });
-      if (mode === "400")
-        return send(400, { type: "error", error: { type: "invalid_request_error", message: "unsupported parameter" } });
+      if (mode === "redirect") {
+        res.writeHead(302, { location: "http://127.0.0.1:9/" });
+        return res.end();
+      }
+      if (mode === "401") return fail(401, "invalid key");
+      if (mode === "402") return fail(402, "payment required");
+      if (mode === "429") return fail(429, "You exceeded your current quota");
+      if (mode === "400credit") return fail(400, "Your credit balance is too low to access the API");
+      if (mode === "400") return fail(400, "unsupported parameter");
+      if (mode === "404") return fail(404, "model not found");
+
+      if (req.method === "GET" && req.url.split("?")[0].endsWith("/models")) {
+        if (mode === "models404") return fail(404, "not found");
+        return send(200, {
+          object: "list",
+          data: state.models.map((id) => ({ id, object: "model", type: "model", created: 0, owned_by: "x", created_at: "2026-01-01T00:00:00Z", display_name: id })),
+          has_more: false,
+          first_id: null,
+          last_id: null,
+        });
+      }
 
       let text = JSON.stringify(state.reply);
       if (mode === "badjson") text = "Sure! Here you go: {not json";

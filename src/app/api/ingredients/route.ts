@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generateJson } from "@/lib/server/llm";
-import { mockAI, mockDelay, mockIngredients } from "@/lib/server/mock";
+import { aiErrorResponse } from "@/lib/server/aiResponse";
+import { generateJson, llmConfig } from "@/lib/server/llm";
+import { mockAI, mockDelay, mockFailure, mockIngredients } from "@/lib/server/mock";
 import type { FreshnessTag, Ingredient } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -38,7 +39,7 @@ From the user's description of what's in their fridge, list each distinct edible
 Only list ingredients actually mentioned. Do not add staples (oil, salt, etc.) or anything not stated.`;
 
 export async function POST(req: Request) {
-  let body: { transcript?: string };
+  let body: { transcript?: string; ai?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -52,13 +53,15 @@ export async function POST(req: Request) {
 
   if (mockAI()) {
     await mockDelay();
+    const failure = mockFailure(transcript);
+    if (failure) return failure;
     return NextResponse.json({
       ingredients: mockIngredients(transcript),
     });
   }
 
   try {
-    const parsed = await generateJson({
+    const parsed = await generateJson(llmConfig(body.ai), {
       system: SYSTEM,
       user: `Here is what the user said is in their fridge: "${transcript}". Extract the ingredient list.`,
       schema: SCHEMA,
@@ -79,10 +82,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ingredients });
   } catch (err) {
-    console.error("[/api/ingredients]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "ingredient parsing failed" },
-      { status: 502 },
-    );
+    return aiErrorResponse("/api/ingredients", err);
   }
 }

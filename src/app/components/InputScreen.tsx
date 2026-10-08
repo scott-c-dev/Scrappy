@@ -1,12 +1,17 @@
+import { cx } from "@/lib/cx";
 import { Mic } from "./Mic";
 import { TextButton } from "./ui";
 
 interface InputScreenProps {
+  /* loading: the saved key isn't read yet · none: no AI service, so the hint
+     says a key is needed · connected: just set up, says "All set" once. */
+  keyState: "loading" | "none" | "ready" | "connected";
   onVoice: () => void;
   onType: () => void;
+  onSetup: () => void;
 }
 
-export function InputScreen({ onVoice, onType }: InputScreenProps) {
+export function InputScreen({ keyState, onVoice, onType, onSetup }: InputScreenProps) {
   return (
     <div className="flex min-h-full flex-col px-22 pt-14 pb-26">
       <div className="flex flex-1 flex-col justify-center gap-8 pt-14 pb-4">
@@ -32,10 +37,37 @@ export function InputScreen({ onVoice, onType }: InputScreenProps) {
           <div className="mt-3 text-13 text-muted">
             e.g. “half a cabbage that&apos;s wilting, three eggs, leftover rice”
           </div>
-          <div className="mx-auto mt-7 max-w-260 text-13 leading-[1.4] text-ink-soft">
-            Mention anything that needs using up — I&apos;ll bump it to the
-            front.
-          </div>
+          {keyState === "none" ? (
+            <div className="mt-7 flex flex-wrap items-center justify-center gap-6 text-13 leading-[1.4] text-ink-soft">
+              <span>Needs an AI key to start</span>
+              <span aria-hidden="true" className="text-muted">
+                ·
+              </span>
+              <TextButton onClick={onSetup} className="p-0 text-13 text-ink-soft">
+                Set up
+              </TextButton>
+            </div>
+          ) : keyState === "connected" ? (
+            <div
+              role="status"
+              className="mx-auto mt-7 flex max-w-260 items-center justify-center gap-7 text-13 leading-[1.4] font-semibold text-ink"
+            >
+              <span className="size-8 flex-none rounded-full bg-fresh" />
+              All set — tap and tell me
+            </div>
+          ) : (
+            // Hidden until the saved key is read, so it never flashes the
+            // wrong hint.
+            <div
+              className={cx(
+                "mx-auto mt-7 max-w-260 text-13 leading-[1.4] text-ink-soft",
+                keyState === "loading" && "invisible",
+              )}
+            >
+              Mention anything that needs using up — I&apos;ll bump it to the
+              front.
+            </div>
+          )}
         </div>
         <TextButton onClick={onType} className="text-13 text-ink-soft">
           or type it instead

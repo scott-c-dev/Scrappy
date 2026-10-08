@@ -1,0 +1,61 @@
+import { NextResponse } from "next/server";
+import { modelOf, type AiSettings, type CheckFailure } from "@/lib/ai";
+import { chatModels, listModels, llmConfig, LlmError, type LlmFailureKind } from "@/lib/server/llm";
+import { mockAI, mockCheck, mockDelay } from "@/lib/server/mock";
+import { assertPublicUrl } from "@/lib/server/netguard";
+
+export const runtime = "nodejs";
+
+/* Checks AI settings before they're saved, and lists the models the key can
+   use for the model picker. Uses only the (free) model list, so it costs
+   nothing; running out of credit shows up at first use instead.
+
+   → { ok: true, models: string[] | null }   null = the service has no list
+   → { ok: false, reason: CheckFailure } */
+
+const REASON: Record<LlmFailureKind, CheckFailure> = {
+  refused: "wrongKey",
+  credit: "wrongKey",
+  modelNotFound: "modelNotFound",
+  unreachable: "unreachable",
+  privateAddress: "privateAddress",
+  service: "unreachable",
+};
+
+export async function POST(req: Request) {
+  let body: { ai?: Partial<AiSettings>; listOnly?: boolean };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+  const ai = body.ai;
+
+  if (mockAI()) {
+    await mockDelay(700);
+    // The address guard needs no network, so it applies here too.
+    if (ai?.provider === "custom" && ai.baseURL) {
+      try {
+        await assertPublicUrl(ai.baseURL);
+      } catch {
+        return NextResponse.json({ ok: false, reason: "privateAddress" });
+      }
+    }
+    const res = mockCheck(ai?.key ?? "");
+    return NextResponse.json("reason" in res ? { ok: false, ...res } : { ok: true, ...res });
+  }
+
+  try {
+    // The picker lists models before one is chosen; any placeholder will do.
+    const config = llmConfig(body.listOnly && ai ? { ...ai, model: ai.model || "-" } : ai);
+    const all = await listModels(config);
+    const model = ai ? modelOf(ai as AiSettings) : "";
+    if (!body.listOnly && all && model && !all.includes(model)) {
+      return NextResponse.json({ ok: false, reason: "modelNotFound" });
+    }
+    return NextResponse.json({ ok: true, models: all && chatModels(all) });
+  } catch (err) {
+    const kind = err instanceof LlmError ? err.kind : "service";
+    return NextResponse.json({ ok: false, reason: REASON[kind] });
+  }
+}

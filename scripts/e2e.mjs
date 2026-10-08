@@ -15,6 +15,13 @@ const ctx = await browser.newContext({
   viewport: { width: 390, height: 844 },
   deviceScaleFactor: 2,
 });
+// Scrappy asks for the user's own AI key before the first run. Save one on
+// the device up front: E2E_AI_KEY (a Claude key) for real calls, or any text
+// in mock mode (MOCK_AI=1), whose check accepts anything.
+await ctx.addInitScript((key) => {
+  const ai = { provider: "claude", key, model: null, format: "anthropic", baseURL: "", effort: null, jsonMode: false, remember: true };
+  localStorage.setItem("scrappy.ai", JSON.stringify(ai));
+}, process.env.E2E_AI_KEY || "sk-ant-mock");
 const page = await ctx.newPage();
 
 const consoleErrors = [];

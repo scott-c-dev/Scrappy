@@ -43,6 +43,12 @@ function write(patch: Partial<Store>): void {
   writeFileSync(STORE_PATH, JSON.stringify(next, null, 2));
 }
 
+/* Whether `pnpm midjourney:auth` has been run on this machine, i.e. whether
+   step pictures can be made at all. */
+export function midjourneyAuthorized(): boolean {
+  return !!read().tokens;
+}
+
 export class FileOAuthProvider implements OAuthClientProvider {
   /* Called with the authorization URL when interactive consent is needed.
      The route passes a no-op (it must already be authorized); the auth script

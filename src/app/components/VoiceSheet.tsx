@@ -160,7 +160,7 @@ export function VoiceSheet({
       {voiceState === "error" && error && (
         <div className="flex w-full flex-col items-center gap-15">
           <div className="flex size-46 items-center justify-center rounded-full bg-rescue-bg text-rescue">
-            {error.icon === "mic" ? <MicOff /> : <CloudAlert />}
+            {error.icon === "mic" ? <MicOff /> : error.icon === "key" ? <KeyIcon /> : <CloudAlert />}
           </div>
           <div className="max-w-280 text-center text-15 leading-[1.45] text-pretty text-ink-soft">
             {error.body}
@@ -229,6 +229,26 @@ function CloudAlert() {
       <path d="M17.5 19H8a5 5 0 1 1 1.4-9.8A6 6 0 0 1 20.5 12 3.5 3.5 0 0 1 17.5 19z" />
       <line x1="12" y1="10" x2="12" y2="13.5" />
       <circle cx="12" cy="16.2" r=".6" fill="currentColor" />
+    </svg>
+  );
+}
+
+function KeyIcon() {
+  return (
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="8" cy="15" r="4" />
+      <path d="M10.8 12.2L20 3" />
+      <path d="M16 7l3 3" />
+      <path d="M14 9l2 2" />
     </svg>
   );
 }

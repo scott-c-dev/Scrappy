@@ -136,9 +136,10 @@ cp .env.example .env.local
 
 #### Your AI key
 Scrappy has no accounts, so it can't hand out free usage: **each person
-connects their own AI key** and pays that service directly. The first tap on
-the mic asks for it — pick Claude or OpenAI, paste the key, done. Settings →
-AI service has every option for later.
+connects their own AI key** and pays that service directly. Until then, the
+mic shows a short card saying so, and "Add a key" opens Settings → AI service:
+pick a service, paste the key, Check & save. The model is pre-filled with a
+good default.
 
 - **Where it lives:** on the device (or only until the tab closes, if
   "Remember on this device" is off). It's sent with each AI request, through
@@ -221,7 +222,7 @@ work on the UI, or try the whole flow, without credit.
 
 | To see | Do this |
 |---|---|
-| First-time key sheet | Open the app with no key saved (or Settings → AI service → Remove key) |
+| "One thing before we cook" card | Tap the mic with no key saved (or after Settings → AI service → Remove key) |
 | Key check: wrong key | A key containing `wrong` |
 | Key check: model not found | A key containing `nomodel` |
 | Key check: can't reach | A key containing `down` |

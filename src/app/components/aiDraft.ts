@@ -1,6 +1,5 @@
-/* The AI service form's state, shared by the first-time sheet and
-   Settings → AI service: what's typed, the model list, and the check that
-   runs before saving. */
+/* The state of Settings → AI service: what's typed, the model list, and the
+   check that runs before saving. */
 
 import { useEffect, useRef, useState } from "react";
 import { checkAi } from "@/lib/api";
@@ -24,18 +23,11 @@ export interface Draft {
   effort: AiEffort | null;
   jsonMode: boolean;
   remember: boolean;
-  /* The model picker is open (always, for Custom). */
-  modelOpen: boolean;
   /* The key's models; null = not fetched (or no list), "loading". */
   models: string[] | null | "loading";
   check: "idle" | "checking" | "ok" | "fail";
   reason: CheckFailure | null;
-  /* The service was switched because of the pasted key's prefix. */
-  switched: boolean;
 }
-
-/* How Settings → AI service opens, e.g. with Custom picked. */
-export type DraftSeed = Partial<Draft>;
 
 export function blankDraft(provider: AiProvider): Draft {
   return {
@@ -47,11 +39,9 @@ export function blankDraft(provider: AiProvider): Draft {
     effort: null,
     jsonMode: false,
     remember: true,
-    modelOpen: false,
     models: null,
     check: "idle",
     reason: null,
-    switched: false,
   };
 }
 
@@ -133,11 +123,10 @@ export function failCopy(reason: CheckFailure, d: Draft): { title: string; body:
   }
 }
 
-/* `withModels`: fetch the key's models while the picker is open. `onSaved`
-   runs after a successful check, or on "Save anyway". */
+/* `onSaved` runs after a successful check, or on "Save anyway". */
 export function useAiDraft(
   initial: Draft,
-  { saved, withModels, onSaved }: { saved: AiSettings | null; withModels: boolean; onSaved: (ai: AiSettings) => void },
+  { saved, onSaved }: { saved: AiSettings | null; onSaved: (ai: AiSettings) => void },
 ) {
   const [d, setD] = useState(initial);
   const run = useRef(0);
@@ -158,7 +147,7 @@ export function useAiDraft(
     const t = key.trim();
     const guess = t.length >= 10 ? (/^sk-ant-/.test(t) ? "claude" : /^sk-/.test(t) ? "openai" : null) : null;
     if (guess && d.provider !== "custom" && guess !== d.provider) {
-      return update({ key, provider: guess, model: DEFAULT_MODEL[guess], models: null, modelOpen: false, switched: true });
+      return update({ key, provider: guess, model: DEFAULT_MODEL[guess], models: null });
     }
     update({ key });
   };
@@ -171,11 +160,10 @@ export function useAiDraft(
   };
 
   // The model list: free to fetch, so it follows the key (debounced).
-  const pickerOpen = withModels && (d.provider === "custom" || d.modelOpen);
   const listKey = `${d.provider}|${d.key.trim()}|${d.baseURL.trim()}|${d.format}`;
-  const canList = pickerOpen && reachable(d);
+  const listable = reachable(d);
   useEffect(() => {
-    if (!canList) return;
+    if (!listable) return;
     const draft = d;
     const my = ++run.current;
     const t = window.setTimeout(async () => {
@@ -187,7 +175,7 @@ export function useAiDraft(
     return () => window.clearTimeout(t);
     // Refetch only when what reaches the service changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listKey, canList]);
+  }, [listKey, listable]);
 
   const runCheck = async () => {
     if (d.check === "checking" || !draftValid(d)) return;
@@ -200,12 +188,7 @@ export function useAiDraft(
       onSaved(settings);
       setD((prev) => ({ ...prev, check: "ok" }));
     } else {
-      setD((prev) => ({
-        ...prev,
-        check: "fail",
-        reason: res.reason,
-        modelOpen: prev.modelOpen || res.reason === "modelNotFound",
-      }));
+      setD((prev) => ({ ...prev, check: "fail", reason: res.reason }));
     }
   };
 
@@ -213,6 +196,18 @@ export function useAiDraft(
   const saveAnyway = () => onSaved(toSettings(d));
 
   // Without an address or key there's nothing to list.
-  const view = canList ? d : { ...d, models: null };
-  return { d: view, update, setKey, setProvider, runCheck, saveAnyway, valid: draftValid(d) };
+  const view = listable ? d : { ...d, models: null };
+  return {
+    d: view,
+    update,
+    setKey,
+    setProvider,
+    runCheck,
+    saveAnyway,
+    valid: draftValid(d),
+    /* There's enough to ask the service for its models. */
+    listable,
+    /* An official service's own default is in use (shows a reassurance). */
+    modelIsDefault: d.provider !== "custom" && d.model.trim() === DEFAULT_MODEL[d.provider],
+  };
 }

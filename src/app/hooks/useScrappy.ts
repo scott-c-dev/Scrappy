@@ -21,7 +21,6 @@ import {
 import { PREF_TITLES, type PrefKey } from "@/lib/prefs";
 import { defaultUnitSystem, type UnitSystem } from "@/lib/units";
 import { isPref, type VoiceErrorAction, type VoiceErrorKind } from "../voiceErrors";
-import type { DraftSeed } from "../components/aiDraft";
 
 export type Screen = "input" | "settings" | "aiSetup" | "confirm" | "dishes" | "cook";
 /* review: showing what was heard (or a text box) before it's sent to the LLM. */
@@ -64,13 +63,12 @@ export interface ScrappyState {
   /* What the server can do: step pictures need an image service set up by
      whoever runs the server. */
   caps: { images: boolean };
-  /* The first-time "Connect an AI" sheet. */
+  /* The "One thing before we cook" card, shown when there's no key yet. */
   keySheetOpen: boolean;
-  /* The home hint says "All set" once after connecting from the sheet. */
+  /* The home hint says "All set" once after connecting from home. */
   justConnected: boolean;
-  /* Where Settings → AI service goes back to, and what it opens with. */
+  /* Where Settings → AI service goes back to. */
   setupReturn: "input" | "settings";
-  setupSeed: DraftSeed | null;
   prefs: Prefs;
   dishes: Dish[];
   dishesLoading: boolean;
@@ -113,7 +111,6 @@ const INITIAL: ScrappyState = {
   keySheetOpen: false,
   justConnected: false,
   setupReturn: "settings",
-  setupSeed: null,
   prefs: { servings: 2, courses: 3, diet: "No restrictions", allergy: "None" },
   dishes: [],
   dishesLoading: false,
@@ -275,7 +272,7 @@ export function useScrappy() {
 
   const removeAi = () => {
     clearAi();
-    setState({ screen: "settings", setupSeed: null });
+    setState({ screen: "settings" });
   };
 
   // Mock mode asks for a key too, so the setup can be tried; its check
@@ -284,20 +281,17 @@ export function useScrappy() {
 
   const openKeySheet = () => setState({ keySheetOpen: true });
   const closeKeySheet = () => setState({ keySheetOpen: false });
-  // After connecting in the sheet: back to home, which says "All set" once.
-  const keySheetDone = () => setState({ keySheetOpen: false, justConnected: true });
 
-  const openAiSetup = (from: "input" | "settings", seed: DraftSeed | null = null) =>
-    setState({
-      screen: "aiSetup",
-      setupReturn: from,
-      setupSeed: seed,
-      keySheetOpen: false,
-      justConnected: false,
-    });
+  const openAiSetup = (from: "input" | "settings") =>
+    setState({ screen: "aiSetup", setupReturn: from, keySheetOpen: false, justConnected: false });
 
-  const closeAiSetup = () =>
-    setState((s) => ({ screen: s.setupReturn, setupSeed: null }));
+  // Back to where it was opened from. After connecting from home, the hint
+  // there says "All set — tap and tell me" once.
+  const closeAiSetup = (connected = false) =>
+    setState((s) => ({
+      screen: s.setupReturn,
+      justConnected: connected && s.setupReturn === "input",
+    }));
 
   // The home screen's mic and "type it instead": without a key, they open
   // the "Connect an AI" sheet instead of starting.
@@ -786,7 +780,6 @@ export function useScrappy() {
     saveAi,
     removeAi,
     closeKeySheet,
-    keySheetDone,
     openAiSetup,
     closeAiSetup,
     // Navigation

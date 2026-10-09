@@ -8,19 +8,16 @@ import { cx } from "@/lib/cx";
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement>;
 
 /* A bottom sheet over the app card. Tapping the scrim calls onClose (leave it
-   out to make the scrim inert). The finale sits above everything else.
-   `lift` raises the panel, e.g. above the on-screen keyboard. */
+   out to make the scrim inert). The finale sits above everything else. */
 export function Sheet({
   onClose,
   finale,
-  lift,
   label,
   className,
   children,
 }: {
   onClose?: () => void;
   finale?: boolean;
-  lift?: number;
   label?: string;
   className?: string;
   children: ReactNode;
@@ -31,7 +28,6 @@ export function Sheet({
         "absolute inset-0 flex flex-col justify-end",
         finale ? "z-40" : "z-30",
       )}
-      style={lift ? { paddingBottom: lift } : undefined}
     >
       <div
         onClick={onClose}
@@ -158,23 +154,29 @@ export function StickyBar({
   );
 }
 
-/* A two- or three-way choice in a pill track (Metric | Imperial, On | Off). */
+/* A two- or three-way choice in a pill track (Metric | Imperial, On | Off).
+   Full width by default; `small` is a compact one beside a label. */
 export function Segmented<T extends string | boolean>({
   label,
   options,
   value,
   onPick,
+  small,
 }: {
   label: string;
   options: [T, string][];
   value: T;
   onPick: (value: T) => void;
+  small?: boolean;
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      className="flex gap-4 rounded-full border border-line bg-paper p-4"
+      className={cx(
+        "flex rounded-full border border-line bg-paper",
+        small ? "flex-none gap-2 p-3" : "gap-4 p-4",
+      )}
     >
       {options.map(([key, text]) => {
         const on = value === key;
@@ -185,7 +187,8 @@ export function Segmented<T extends string | boolean>({
             aria-checked={on}
             onClick={() => onPick(key)}
             className={cx(
-              "flex-1 cursor-pointer rounded-full p-10 font-body text-14 font-bold",
+              "cursor-pointer rounded-full font-body font-bold",
+              small ? "px-13 py-6 text-13" : "flex-1 p-10 text-14",
               on ? "bg-accent text-accent-ink" : "bg-transparent text-ink-soft",
             )}
           >
@@ -197,21 +200,18 @@ export function Segmented<T extends string | boolean>({
   );
 }
 
-/* A single-line text field. `on` is the surface it sits on, so it stays
-   visible against it: paper inside a card, card on a sheet. */
-export function TextInput({
-  on = "card",
-  className,
-  ...props
-}: InputHTMLAttributes<HTMLInputElement> & { on?: "card" | "paper" }) {
+/* A single-line text field inside a card (keys, addresses, model names —
+   so no autocorrect or capitals). */
+export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="none"
       spellCheck={false}
       {...props}
       className={cx(
-        "w-full rounded-inner border border-line px-13 py-12 font-body text-15 text-ink outline-none focus:border-accent",
-        on === "card" ? "bg-paper" : "bg-card",
+        "w-full rounded-inner border border-line bg-paper px-13 py-12 font-body text-15 text-ink outline-none focus:border-accent",
         className,
       )}
     />

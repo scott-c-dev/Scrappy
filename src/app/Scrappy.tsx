@@ -13,7 +13,7 @@ import { ErrorToast } from "./components/ErrorToast";
 import { SwapSheet } from "./components/SwapSheet";
 import { AdjustSheet } from "./components/AdjustSheet";
 import { SettingsScreen } from "./components/SettingsScreen";
-import { AiKeySheet, AiSetupScreen } from "./components/AiService";
+import { AiKeyCard, AiSetupScreen } from "./components/AiService";
 import { onTheClock } from "./components/freshness";
 import { voiceErrorView } from "./voiceErrors";
 
@@ -53,7 +53,6 @@ export default function Scrappy() {
     saveAi,
     removeAi,
     closeKeySheet,
-    keySheetDone,
     openAiSetup,
     closeAiSetup,
     back,
@@ -155,7 +154,6 @@ export default function Scrappy() {
           {s.screen === "aiSetup" && (
             <AiSetupScreen
               saved={ai ?? null}
-              seed={s.setupSeed}
               onSave={saveAi}
               onRemove={removeAi}
               onDone={closeAiSetup}
@@ -247,12 +245,7 @@ export default function Scrappy() {
           />
         )}
         {s.keySheetOpen && (
-          <AiKeySheet
-            onSave={saveAi}
-            onDone={keySheetDone}
-            onClose={closeKeySheet}
-            onSettings={(seed) => openAiSetup("input", seed)}
-          />
+          <AiKeyCard onAdd={() => openAiSetup("input")} onClose={closeKeySheet} />
         )}
         {s.finishOpen && (
           <FinishSheet

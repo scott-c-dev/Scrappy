@@ -1,12 +1,21 @@
 import type { PrefKey } from "@/lib/prefs";
 import type { VoiceContext } from "./hooks/useScrappy";
 
-/* The five ways a voice turn can fail, grouped by when they happen:
+/* The ways a voice turn can fail, grouped by when they happen:
    - before listening: offline, permission
    - after listening:  noisy (no words came through)
    - after sending:    nofood (the LLM found no ingredients), service (the LLM
-     call failed); offline can also land here if the connection drops. */
-export type VoiceErrorKind = "noisy" | "permission" | "nofood" | "service" | "offline";
+     call failed), credit (the user's AI account is out of credit or busy),
+     refused (their AI key was refused); offline can also land here if the
+     connection drops. */
+export type VoiceErrorKind =
+  | "noisy"
+  | "permission"
+  | "nofood"
+  | "service"
+  | "credit"
+  | "refused"
+  | "offline";
 
 /* What an error-sheet button does.
    record: listen again · type: open the text box · pick: back to the pref
@@ -22,7 +31,7 @@ interface ErrorButton {
 export interface VoiceErrorView {
   title: string;
   body: string;
-  icon: "mic" | "cloud";
+  icon: "mic" | "cloud" | "key";
   primary: ErrorButton;
   secondary: ErrorButton | null;
 }
@@ -99,6 +108,28 @@ export function voiceErrorView(
         icon: "cloud",
         primary: retry,
         secondary: edit ?? { label: "Not now", act: "close" },
+      };
+
+    // A key can only be changed from the home screen, so "Try again" only
+    // helps once the account is topped up; the list is kept for that.
+    case "credit":
+      return {
+        title: "Out of credit",
+        body:
+          "Your AI account is out of credit (or busy). Top it up, then try again." +
+          (isPref(ctx) ? "" : " I kept your list."),
+        icon: "cloud",
+        primary: retry,
+        secondary: { label: "Not now", act: "close" },
+      };
+
+    case "refused":
+      return {
+        title: "Key refused",
+        body: "Your AI key was refused. You can change it in Settings, from the home screen.",
+        icon: "key",
+        primary: retry,
+        secondary: { label: "Not now", act: "close" },
       };
 
     case "offline":

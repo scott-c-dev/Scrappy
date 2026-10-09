@@ -13,12 +13,14 @@ import { ErrorToast } from "./components/ErrorToast";
 import { SwapSheet } from "./components/SwapSheet";
 import { AdjustSheet } from "./components/AdjustSheet";
 import { SettingsScreen } from "./components/SettingsScreen";
+import { AiKeyCard, AiSetupScreen } from "./components/AiService";
 import { onTheClock } from "./components/freshness";
 import { voiceErrorView } from "./voiceErrors";
 
 export default function Scrappy() {
   const {
     state: s,
+    ai,
     startVoice,
     voiceDone,
     voiceCancel,
@@ -26,7 +28,6 @@ export default function Scrappy() {
     reviewChange,
     reviewEdit,
     reviewSend,
-    typedInput,
     removeIng,
     openAdjust,
     closeAdjust,
@@ -47,6 +48,13 @@ export default function Scrappy() {
     openSettings,
     setUnits,
     setStepPics,
+    homeVoice,
+    homeType,
+    saveAi,
+    removeAi,
+    closeKeySheet,
+    openAiSetup,
+    closeAiSetup,
     back,
     restart,
     setState,
@@ -63,7 +71,15 @@ export default function Scrappy() {
       " before they turned."
     : "Good cooking.";
 
-  const progressStep = { input: 0, settings: 0, confirm: 1, dishes: 2, cook: 3 }[s.screen];
+  const progressStep = { input: 0, settings: 0, aiSetup: 0, confirm: 1, dishes: 2, cook: 3 }[s.screen];
+  const inSettings = s.screen === "settings" || s.screen === "aiSetup";
+  const keyState = ai === undefined
+    ? "loading"
+    : !ai
+      ? "none"
+      : s.justConnected
+        ? "connected"
+        : "ready";
   const showBack = s.screen !== "input";
   const voiceError =
     s.voiceError && s.voiceContext
@@ -85,14 +101,14 @@ export default function Scrappy() {
               </HeaderButton>
             )}
             <span className="font-display text-20 font-extrabold text-ink">
-              {s.screen === "settings" ? "Settings" : "Scrappy"}
+              {s.screen === "settings" ? "Settings" : s.screen === "aiSetup" ? "AI service" : "Scrappy"}
             </span>
           </div>
           <div className="flex items-center gap-12">
             <div
               className={cx(
                 "flex items-center gap-5",
-                s.screen === "settings" && "opacity-0",
+                inSettings && "opacity-0",
               )}
             >
               {[0, 1, 2, 3].map((i) => (
@@ -118,16 +134,29 @@ export default function Scrappy() {
         <div className="noscroll relative flex-1 overflow-y-auto">
           {s.screen === "input" && (
             <InputScreen
-              onVoice={() => startVoice("input")}
-              onType={typedInput}
+              keyState={keyState}
+              onVoice={homeVoice}
+              onType={homeType}
+              onSetup={homeVoice}
             />
           )}
           {s.screen === "settings" && (
             <SettingsScreen
+              ai={ai ?? null}
+              onAiService={() => openAiSetup("settings")}
               units={s.units}
               onUnits={setUnits}
+              images={s.caps.images}
               stepPics={s.stepPics}
               onStepPics={setStepPics}
+            />
+          )}
+          {s.screen === "aiSetup" && (
+            <AiSetupScreen
+              saved={ai ?? null}
+              onSave={saveAi}
+              onRemove={removeAi}
+              onDone={closeAiSetup}
             />
           )}
           {s.screen === "confirm" && (
@@ -159,7 +188,7 @@ export default function Scrappy() {
               cookStep={s.cookStep}
               imgState={s.imgState}
               imgUrls={s.imgUrls}
-              pictures={s.stepPics}
+              pictures={s.stepPics && s.caps.images}
               onSetDish={setCookDish}
               onNext={nextStep}
               onPrev={prevStep}
@@ -214,6 +243,9 @@ export default function Scrappy() {
             onClose={closePref}
             onVoice={startVoice}
           />
+        )}
+        {s.keySheetOpen && (
+          <AiKeyCard onAdd={() => openAiSetup("input")} onClose={closeKeySheet} />
         )}
         {s.finishOpen && (
           <FinishSheet

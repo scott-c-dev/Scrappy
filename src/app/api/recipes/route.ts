@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generateJson } from "@/lib/server/llm";
+import { aiErrorResponse } from "@/lib/server/aiResponse";
+import { generateJson, llmConfig, type LlmConfig } from "@/lib/server/llm";
 import { mockAI, mockDelay, mockDishes, mockSwap } from "@/lib/server/mock";
 import { allowedSet, normalize, STAPLES } from "@/lib/staples";
 import type { Dish, Ingredient, Prefs, Step } from "@/lib/types";
@@ -21,6 +22,8 @@ interface Body {
   exclude?: string[];
   /* Optional spoken ad-hoc preference for this swap (e.g. "make it spicier"). */
   note?: string;
+  /* The user's AI settings. */
+  ai?: unknown;
 }
 
 const DISH_SCHEMA = z.object({
@@ -90,6 +93,7 @@ Honour preferences: cook for ${prefs.servings} ${prefs.servings === 1 ? "person"
 }
 
 async function generate(
+  config: LlmConfig,
   body: Body,
   count: number,
   extra: string,
@@ -99,7 +103,7 @@ ${ingredientLines(body.ingredients)}
 
 Design ${count} ${count === 1 ? "dish" : "distinct dishes"} under the hard constraint.${extra}`;
 
-  const { dishes } = await generateJson({
+  const { dishes } = await generateJson(config, {
     system: systemPrompt(body.prefs, body.units === "imperial" ? "imperial" : "metric"),
     user: userText,
     schema: SCHEMA,
@@ -193,13 +197,15 @@ export async function POST(req: Request) {
     : "";
 
   try {
-    let dishes = await generate(body, count, extra);
+    const config = llmConfig(body.ai);
+    let dishes = await generate(config, body, count, extra);
 
     // §7 validation: one corrective re-prompt, then strip as a backstop.
     let violations = findViolations(dishes, allowed);
     if (violations.length) {
       console.warn("[/api/recipes] violations, re-prompting:", violations);
       dishes = await generate(
+        config,
         body,
         count,
         `${extra}\n\nYour previous attempt used ingredients NOT in my list or the whitelist: ${violations.join(", ")}. Regenerate using ONLY my ingredients plus the whitelist — drop or substitute those items.`,
@@ -213,10 +219,6 @@ export async function POST(req: Request) {
       ? NextResponse.json({ dish: mapped[0] })
       : NextResponse.json({ dishes: mapped });
   } catch (err) {
-    console.error("[/api/recipes]", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "recipe generation failed" },
-      { status: 502 },
-    );
+    return aiErrorResponse("/api/recipes", err);
   }
 }

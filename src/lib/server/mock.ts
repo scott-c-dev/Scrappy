@@ -5,10 +5,14 @@
 
    The fakes respond to what was actually said, so every UI path is reachable:
    naming foods gives an ingredient list, saying no known food gives an empty
-   one (the "no food" message), and a failed request can be seen by turning
-   the mock off while out of credit (the "service" message). */
+   one (the "no food" message), and saying "out of credit", "key refused" or
+   "server error" shows that message. The AI key check answers too: a key
+   containing "wrong", "nomodel" or "down" fails that way; anything else
+   connects. The README's "Mock mode" section lists all of these. */
 
 import "server-only";
+import { NextResponse } from "next/server";
+import type { CheckFailure } from "@/lib/ai";
 import type { FreshnessTag, Ingredient, Dish, Prefs, Step } from "@/lib/types";
 
 export function mockAI(): boolean {
@@ -18,6 +22,33 @@ export function mockAI(): boolean {
 
 // A short pause so loading states are visible, as with the real APIs.
 export const mockDelay = (ms = 900) => new Promise((r) => setTimeout(r, ms));
+
+// ── AI key failures ──────────────────────────────────────────────────────────
+
+/* A 502 like a real failed AI call, when the text asks for one. */
+export function mockFailure(text: string) {
+  const t = text.toLowerCase();
+  const kind = /out of credit/.test(t)
+    ? "credit"
+    : /key refused/.test(t)
+      ? "refused"
+      : /server error/.test(t)
+        ? "service"
+        : null;
+  return kind && NextResponse.json({ error: `mock: ${kind}`, kind }, { status: 502 });
+}
+
+export function mockCheck(key: string): { reason: CheckFailure } | { models: string[] } {
+  const k = key.toLowerCase();
+  if (k.includes("wrong")) return { reason: "wrongKey" };
+  if (k.includes("nomodel")) return { reason: "modelNotFound" };
+  if (k.includes("down")) return { reason: "unreachable" };
+  return {
+    models: k.startsWith("sk-ant-")
+      ? ["claude-haiku-4-5", "claude-opus-5-5", "claude-sonnet-5-5"]
+      : ["gpt-6-astra", "gpt-6-luna", "gpt-6-sol"],
+  };
+}
 
 // ── Ingredients ──────────────────────────────────────────────────────────────
 

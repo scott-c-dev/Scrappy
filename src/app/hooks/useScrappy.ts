@@ -1,14 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Dish, Ingredient, Prefs } from "@/lib/types";
 import {
+  ApiError,
   generateImage,
   generateRecipes,
+  getCapabilities,
   parseIngredients,
   parsePref,
   swapDish,
 } from "@/lib/api";
+import type { AiSettings } from "@/lib/ai";
+import { clearAi, getAi, getServerAi, storeAi, subscribeAi } from "@/lib/aiStore";
 import {
   startVoiceCapture,
   VoiceCaptureError,
@@ -18,7 +22,7 @@ import { PREF_TITLES, type PrefKey } from "@/lib/prefs";
 import { defaultUnitSystem, type UnitSystem } from "@/lib/units";
 import { isPref, type VoiceErrorAction, type VoiceErrorKind } from "../voiceErrors";
 
-export type Screen = "input" | "settings" | "confirm" | "dishes" | "cook";
+export type Screen = "input" | "settings" | "aiSetup" | "confirm" | "dishes" | "cook";
 /* review: showing what was heard (or a text box) before it's sent to the LLM. */
 export type VoiceState = "idle" | "listening" | "processing" | "review" | "error";
 export type VoiceContext =
@@ -56,6 +60,15 @@ export interface ScrappyState {
   units: UnitSystem;
   /* Step and finale pictures; off means they're never generated. */
   stepPics: boolean;
+  /* What the server can do: step pictures need an image service set up by
+     whoever runs the server. */
+  caps: { images: boolean };
+  /* The "One thing before we cook" card, shown when there's no key yet. */
+  keySheetOpen: boolean;
+  /* The home hint says "All set" once after connecting from home. */
+  justConnected: boolean;
+  /* Where Settings → AI service goes back to. */
+  setupReturn: "input" | "settings";
   prefs: Prefs;
   dishes: Dish[];
   dishesLoading: boolean;
@@ -94,6 +107,10 @@ const INITIAL: ScrappyState = {
   adjustId: null,
   units: "metric",
   stepPics: true,
+  caps: { images: true },
+  keySheetOpen: false,
+  justConnected: false,
+  setupReturn: "settings",
   prefs: { servings: 2, courses: 3, diet: "No restrictions", allergy: "None" },
   dishes: [],
   dishesLoading: false,
@@ -156,9 +173,21 @@ function savedPics(): boolean {
   }
 }
 
-// A failed request is the connection's fault if the browser says it's offline.
-const requestFailure = (): VoiceErrorKind =>
-  navigator.onLine ? "service" : "offline";
+// Why a request failed: the user's AI account (out of credit, key refused),
+// the connection if the browser says it's offline, or the service.
+const requestFailure = (err: unknown): VoiceErrorKind => {
+  if (err instanceof ApiError && (err.kind === "credit" || err.kind === "refused")) return err.kind;
+  return navigator.onLine ? "service" : "offline";
+};
+
+const AI_TOAST = {
+  credit: "Your AI account is out of credit (or busy). Top it up, then try again.",
+  refused: "Your AI key was refused. You can change it in Settings, from the home screen.",
+};
+const toastFor = (err: unknown, fallback: string) =>
+  err instanceof ApiError && (err.kind === "credit" || err.kind === "refused")
+    ? AI_TOAST[err.kind]
+    : fallback;
 
 export function useScrappy() {
   // Nothing on the first screen shows these settings, so reading them here
@@ -225,7 +254,57 @@ export function useScrappy() {
     setState({ stepPics });
   };
 
-  const openSettings = () => setState({ screen: "settings" });
+  const openSettings = () => setState({ screen: "settings", justConnected: false });
+
+  // ── AI service (bring your own key) ──────────────────────────────────────
+
+  // The user's AI settings (their own key) live on this device. undefined
+  // until the browser has read them — the server can't know them.
+  const ai = useSyncExternalStore(subscribeAi, getAi, getServerAi);
+
+  useEffect(() => {
+    getCapabilities()
+      .then((caps) => setState({ caps }))
+      .catch(() => {});
+  }, [setState]);
+
+  const saveAi = (settings: AiSettings) => storeAi(settings);
+
+  const removeAi = () => {
+    clearAi();
+    setState({ screen: "settings" });
+  };
+
+  // Mock mode asks for a key too, so the setup can be tried; its check
+  // accepts any key.
+  const aiReady = () => !!getAi();
+
+  const openKeySheet = () => setState({ keySheetOpen: true });
+  const closeKeySheet = () => setState({ keySheetOpen: false });
+
+  const openAiSetup = (from: "input" | "settings") =>
+    setState({ screen: "aiSetup", setupReturn: from, keySheetOpen: false, justConnected: false });
+
+  // Back to where it was opened from. After connecting from home, the hint
+  // there says "All set — tap and tell me" once.
+  const closeAiSetup = (connected = false) =>
+    setState((s) => ({
+      screen: s.setupReturn,
+      justConnected: connected && s.setupReturn === "input",
+    }));
+
+  // The home screen's mic and "type it instead": without a key, they open
+  // the "Connect an AI" sheet instead of starting.
+  const homeVoice = () => {
+    if (!aiReady()) return openKeySheet();
+    setState({ justConnected: false });
+    startVoice("input");
+  };
+  const homeType = () => {
+    if (!aiReady()) return openKeySheet();
+    setState({ justConnected: false });
+    openTyped("input");
+  };
 
   // Let the offline message say so when the connection comes back.
   useEffect(() => {
@@ -259,8 +338,8 @@ export function useScrappy() {
         dishes: s.dishes.map((d) => (d.id === id ? alt : d)),
         replacingId: null,
       }));
-    } catch {
-      setState({ replacingId: null, error: "Couldn't find another dish." });
+    } catch (err) {
+      setState({ replacingId: null, error: toastFor(err, "Couldn't find another dish.") });
     }
   };
 
@@ -314,8 +393,8 @@ export function useScrappy() {
           voiceState: "idle",
         });
       }
-    } catch {
-      if (my === turn.current) showVoiceError(requestFailure(), true);
+    } catch (err) {
+      if (my === turn.current) showVoiceError(requestFailure(err), true);
     }
   };
 
@@ -339,8 +418,8 @@ export function useScrappy() {
         voiceState: "idle",
         prefOpen: false,
       }));
-    } catch {
-      if (my === turn.current) showVoiceError(requestFailure(), true);
+    } catch (err) {
+      if (my === turn.current) showVoiceError(requestFailure(err), true);
     }
   };
 
@@ -525,11 +604,11 @@ export function useScrappy() {
         units: stateRef.current.units,
       });
       setState({ dishes, dishesLoading: false });
-    } catch {
+    } catch (err) {
       setState({
         dishesLoading: false,
         screen: "confirm",
-        error: "Couldn't build recipes — try again.",
+        error: toastFor(err, "Couldn't build recipes — try again."),
       });
     }
   };
@@ -557,11 +636,14 @@ export function useScrappy() {
 
   // ── Cook + image generation ──────────────────────────────────────────────
 
+  // Pictures need the setting on and an image service on this server.
+  const picturesOn = () => stateRef.current.stepPics && stateRef.current.caps.images;
+
   // Kicks off step image generation for a dish, staggered so images arrive
   // roughly as the cook reaches each step. Failed generations degrade
   // gracefully to the caption card.
   const genImages = (di: number) => {
-    if (!stateRef.current.stepPics) return;
+    if (!picturesOn()) return;
     const dish = stateRef.current.dishes[di];
     const steps = dish?.steps ?? [];
     const loads: Record<string, "loading" | "ready"> = {};
@@ -607,7 +689,7 @@ export function useScrappy() {
 
   const openFinish = () => {
     setState({ finishOpen: true });
-    if (!stateRef.current.stepPics) return;
+    if (!picturesOn()) return;
     if (stateRef.current.finaleUrl || stateRef.current.finaleLoading) return;
     const dish =
       stateRef.current.dishes[stateRef.current.cookDish] ??
@@ -637,6 +719,7 @@ export function useScrappy() {
 
   const back = () => {
     const sc = stateRef.current.screen;
+    if (sc === "aiSetup") return closeAiSetup();
     const map: Partial<Record<Screen, Screen>> = {
       settings: "input",
       confirm: "input",
@@ -650,15 +733,13 @@ export function useScrappy() {
     turn.current++;
     voiceRef.current?.cancel();
     clearCt();
-    setRaw({
-      ...INITIAL,
-      units: stateRef.current.units,
-      stepPics: stateRef.current.stepPics,
-    });
+    const { units, stepPics, caps } = stateRef.current;
+    setRaw({ ...INITIAL, units, stepPics, caps });
   };
 
   return {
     state,
+    ai,
     // Voice
     startVoice,
     voiceDone,
@@ -693,6 +774,14 @@ export function useScrappy() {
     openSettings,
     setUnits,
     setStepPics,
+    // AI service
+    homeVoice,
+    homeType,
+    saveAi,
+    removeAi,
+    closeKeySheet,
+    openAiSetup,
+    closeAiSetup,
     // Navigation
     back,
     restart,

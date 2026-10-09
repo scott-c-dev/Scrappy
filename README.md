@@ -127,16 +127,11 @@ pnpm install
 ```
 
 ### 2. Configure the server
-Copy the template (`.env.local` is gitignored). Nothing in it is required;
-there's no AI key here — see "Your AI key".
+Copy the template (`.env.local` is gitignored). Nothing in it is required, and
+there's no AI key in it — see "Your AI key". Every setting is described in
+"Configuration" below.
 ```bash
 cp .env.example .env.local
-```
-```
-# ALLOW_PRIVATE_LLM_URLS=1                             # see "Your AI key"
-# DEEPGRAM_API_KEY=...                                 # only for the fallback
-# MIDJOURNEY_MCP_URL=https://mcp.midjourney.com/mcp   # optional override
-# MOCK_AI=1                                            # see "Mock mode"
 ```
 
 #### Your AI key
@@ -184,12 +179,62 @@ The mic needs a secure context, so `pnpm dev` serves HTTPS. To try it on a phone
 `pnpm tun_dev` runs the dev server plus a temporary Cloudflare tunnel and prints
 a public `https://….trycloudflare.com` URL.
 
+## Configuration
+
+Server settings go in `.env.local`; `.env.example` has each one commented out
+with the same notes. Restart the dev server after changing them. Switches
+count as on for any value except `0` and `false`.
+
+| Variable | Values (default) | What it's for |
+|---|---|---|
+| `MOCK_AI` | `1` (off) | Answer the AI routes with local fakes — no AI service, no credit. See "Mock mode". |
+| `DEV_LAN_ORIGIN` | an IP, e.g. `10.0.0.175` (unset) | Your computer's LAN IP, so a phone on the same Wi-Fi can use the dev server. Tunnel addresses (`*.trycloudflare.com`) are always allowed. |
+| `ALLOW_PRIVATE_LLM_URLS` | `1` (refuse) | Let a Custom AI service use a private or local address. Only when Scrappy runs on your own network — see "Your AI key". |
+| `MIDJOURNEY_MCP_URL` | a URL (`https://mcp.midjourney.com/mcp`) | The Midjourney MCP server for step pictures. The login itself is `pnpm midjourney:auth`, not a variable. |
+| `DEEPGRAM_API_KEY` | a Deepgram key (unset) | Speech for browsers without the Web Speech API. Unused while `DEEPGRAM_FALLBACK_ENABLED` is `false` in `src/lib/voice.ts`. |
+
+Two more are read only by the test walkthrough (`node scripts/e2e.mjs`), set on
+the command line: `BASE` — the app's address (`http://localhost:3210`) — and
+`E2E_AI_KEY` — a Claude key for real calls (a mock key otherwise).
+
+There's no code-level switch for the AI service: each person's settings come
+from the app (Settings → AI service).
+
 ### Mock mode
-Set `MOCK_AI=1` in `.env.local` (and restart) to answer the AI routes with local
-fakes — no API credit used. Useful for working on the UI or when you're out of
-credit. The app still asks for a key so setup can be tried; any text works,
-and a key containing `wrong`, `nomodel` or `down` fails that way. Saying "out of
-credit" or "key refused" shows those messages.
+With `MOCK_AI=1`, the AI routes answer instantly from local fakes, so you can
+work on the UI, or try the whole flow, without credit.
+
+**What's faked**
+- **Ingredients:** picked out of what you say by name — about 40 common foods
+  (eggs, cabbage, tofu, rice, chicken, tomatoes…). Freshness comes from words
+  like "wilting", "going bad" or "old" (going bad), "leftover" or "opened" (use
+  soon) and "fresh" or "just bought" (fresh); amounts from numbers and units
+  you say ("two eggs", "200 g tofu").
+- **Preferences:** numbers for servings and dishes; words like "vegetarian",
+  "gluten" or "dairy" for diet and allergies.
+- **Dishes and swaps:** made from your ingredients, going-bad ones first; a
+  swap note ("make it spicier") shows in the new dish's description.
+- **Pictures:** placeholder images, so Step pictures is always available.
+- **The key check:** any key connects, and lists a few model names.
+
+**Seeing each state**
+
+| To see | Do this |
+|---|---|
+| First-time key sheet | Open the app with no key saved (or Settings → AI service → Remove key) |
+| Key check: wrong key | A key containing `wrong` |
+| Key check: model not found | A key containing `nomodel` |
+| Key check: can't reach | A key containing `down` |
+| Key check: private address | Custom, with an address like `http://192.168.1.20:11434/v1` |
+| Key switched by its prefix | Paste a key starting `sk-proj-` (OpenAI) or `sk-ant-` (Claude) |
+| "Out of credit" | Say or type "out of credit" as your list, or as a preference |
+| "Key refused" | Say or type "key refused" |
+| "My kitchen brain is out" (any other failure) | Say or type "server error" |
+| "Heard you — but no food?" | Say or type something with no food in it |
+| "You're offline" | Turn the network off (e.g. DevTools → Network → Offline) |
+| "I can't hear you" / "one more time?" | Real browser states: block the mic, or stop without speaking |
+
+Mock keys are saved like real ones, per browser and address.
 
 ## Scripts
 

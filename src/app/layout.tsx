@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     "Say what's in your fridge. Scrappy cooks around it — no shopping trip — and puts the food that's about to go bad first in line.",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "Scrappy", statusBarStyle: "default" },
-  icons: { apple: "/apple-touch-icon.png", icon: "/icon.svg" },
+  icons: { apple: "/apple-touch-icon.png", icon: "/favicon.svg" },
 };
 
 export const viewport: Viewport = {

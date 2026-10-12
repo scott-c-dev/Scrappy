@@ -154,6 +154,74 @@ describe("official OpenAI (defaults)", () => {
   });
 });
 
+describe("vendors without strict-schema output", () => {
+  type Sent = { body: { response_format?: { type: string }; output_config?: { format?: unknown } } };
+  const formats = (from: number): string[] =>
+    (fake.state.requests.slice(from) as Sent[]).map(
+      (r) => r.body.response_format?.type ?? (r.body.output_config?.format ? "json_schema" : "prompt"),
+    );
+
+  for (const mode of ["schema400", "schema422", "schemaIgnored"]) {
+    test(`${mode}: one retry with the schema in the prompt, then it works`, async () => {
+      fake.state.mode = mode;
+      fake.state.reply = ING_REPLY;
+      const from = fake.state.requests.length;
+      const { status, json } = await post(ingredients, { transcript: "cabbage", ai: custom() });
+      assert.equal(status, 200);
+      assert.equal(json.ingredients.length, 2);
+      assert.deepEqual(formats(from), ["json_schema", "json_object"]);
+      assert.match(lastRequest().body.messages[0].content, /JSON Schema/);
+    });
+  }
+
+  test("Claude-style vendor: retried without output_config.format, effort kept", async () => {
+    fake.state.mode = "schema400";
+    fake.state.reply = ING_REPLY;
+    const from = fake.state.requests.length;
+    const ai = custom({ format: "anthropic", baseURL: fake.url, effort: "low" });
+    const { status } = await post(ingredients, { transcript: "cabbage", ai });
+    assert.equal(status, 200);
+    assert.deepEqual(formats(from), ["json_schema", "prompt"]);
+    assert.deepEqual(lastRequest().body.output_config, { effort: "low" });
+    assert.match(lastRequest().body.system, /JSON Schema/);
+  });
+
+  test("object mode chosen in settings: no second request", async () => {
+    fake.state.mode = "badjson";
+    const from = fake.state.requests.length;
+    const { status } = await post(ingredients, { transcript: "cabbage", ai: custom({ jsonMode: true }) });
+    assert.equal(status, 502);
+    assert.equal(fake.state.requests.length - from, 1);
+  });
+
+  test("no object-mode retry for a key, credit or model problem", async () => {
+    // (A 429 is still retried once by the SDK itself, in the same mode.)
+    for (const mode of ["401", "429", "400credit", "404"]) {
+      fake.state.mode = mode;
+      const from = fake.state.requests.length;
+      await post(ingredients, { transcript: "cabbage", ai: custom() });
+      assert.ok(formats(from).every((f) => f === "json_schema"), mode);
+    }
+  });
+
+  test("a 200 with no answer in it: a clean error, not a crash", async () => {
+    fake.state.mode = "noanswer";
+    const errors: string[] = [];
+    const realError = console.error;
+    console.error = (...a: unknown[]) => void errors.push(a.join(" "));
+    try {
+      const { status, json } = await post(ingredients, { transcript: "cabbage", ai: custom() });
+      assert.equal(status, 502);
+      assert.equal(json.kind, "service");
+      assert.equal(json.error, "the AI service sent a reply with no answer in it");
+      assert.doesNotMatch(JSON.stringify(json), /DEGRADED/, "the vendor's words stay out of the reply");
+      assert.match(errors.join("\n"), /vendor said: Function is DEGRADED/, "…and go to the log");
+    } finally {
+      console.error = realError;
+    }
+  });
+});
+
 describe("custom service", () => {
   test("OpenAI-style vendor: max_tokens, strict schema, nulls dropped", async () => {
     fake.state.reply = { dishes: [{ ...DISH, steps: [{ text: "Fry.", needsImage: false, cap: null, imagePrompt: null }] }] };

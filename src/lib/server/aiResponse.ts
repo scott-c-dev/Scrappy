@@ -7,7 +7,7 @@ import { classify } from "./llm";
    which message to show: out of credit, key refused, or a generic failure. */
 export function aiErrorResponse(route: string, err: unknown) {
   const e = classify(err);
-  console.error(`[${route}] ${e.kind}: ${e.message}`);
+  console.error(`[${route}] ${e.kind}: ${e.message}${e.detail ? ` — vendor said: ${e.detail}` : ""}`);
   const kind: AiFailure = e.kind === "credit" || e.kind === "refused" ? e.kind : "service";
   return NextResponse.json({ error: e.message, kind }, { status: 502 });
 }

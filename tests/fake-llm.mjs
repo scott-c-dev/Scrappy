@@ -10,7 +10,9 @@ export function startFakeLlm() {
   const state = {
     requests: [],
     /* ok | badjson | wrongshape | fenced | truncated | refusal | redirect
-       | 400 | 400credit | 401 | 402 | 404 | 429 | models404 */
+       | 400 | 400credit | 401 | 402 | 404 | 429 | models404 | noanswer
+       | schema400 | schema422 | schemaIgnored: how vendors without strict-schema
+       output react to it (fine once the schema comes in the prompt instead) */
     mode: "ok",
     reply: {},
     models: MODELS,
@@ -39,6 +41,15 @@ export function startFakeLlm() {
       if (mode === "400") return fail(400, "unsupported parameter");
       if (mode === "404") return fail(404, "model not found");
 
+      // A strict-schema request: OpenAI's response_format, or Anthropic's output_config.format.
+      const schemaAsked = body.response_format?.type === "json_schema" || !!body.output_config?.format;
+      if (schemaAsked && mode === "schema400") return fail(400, "This response_format type is unavailable now");
+      if (schemaAsked && mode === "schema422") {
+        return send(422, { detail: [{ loc: ["body", "response_format"], msg: "Input should be 'text' or 'json_object'", type: "literal_error" }] });
+      }
+      // An error sent with a 200 and no answer in it.
+      if (mode === "noanswer") return send(200, { error: { message: "Function is DEGRADED, try again later" } });
+
       if (req.method === "GET" && req.url.split("?")[0].endsWith("/models")) {
         if (mode === "models404") return fail(404, "not found");
         return send(200, {
@@ -52,7 +63,7 @@ export function startFakeLlm() {
 
       let text = JSON.stringify(state.reply);
       if (mode === "badjson") text = "Sure! Here you go: {not json";
-      if (mode === "wrongshape") text = JSON.stringify({ something: "else" });
+      if (mode === "wrongshape" || (schemaAsked && mode === "schemaIgnored")) text = JSON.stringify({ something: "else" });
       if (mode === "fenced") text = "```json\n" + text + "\n```";
 
       if (req.url.endsWith("/messages")) {

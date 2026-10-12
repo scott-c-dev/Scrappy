@@ -1,5 +1,6 @@
 /* Server-only LLM client. The user's AI settings (their own key — "bring your
-   own key") arrive with each request; nothing is stored or logged here.
+   own key") arrive with each request; nothing is stored here, and only a
+   vendor's own error text is logged (never the settings or the key).
 
    Every call Scrappy makes has the same shape — a system prompt, one user
    message, and a JSON reply matching a schema — so one function covers both
@@ -40,12 +41,29 @@ export type LlmFailureKind =
   | "service"; // anything else, incl. a reply we couldn't use
 
 export class LlmError extends Error {
+  /* The vendor's own words, for the server log only — never sent to the app. */
+  readonly detail?: string;
+  /* Looks like the vendor didn't take strict-schema output (a 400/422, an
+     answer-less reply, or JSON we couldn't use): worth one retry in object mode. */
+  readonly formatIssue: boolean;
   constructor(
     readonly kind: LlmFailureKind,
     message: string,
+    opts: { detail?: string; formatIssue?: boolean } = {},
   ) {
     super(message);
+    this.detail = opts.detail;
+    this.formatIssue = opts.formatIssue ?? false;
   }
+}
+
+/* A short excerpt of what a vendor sent, for the log: its error message when
+   the body has one, else the start of the body. */
+function vendorText(body: unknown): string {
+  const b = body as { error?: { message?: unknown } | string; detail?: unknown; message?: unknown } | null;
+  const said = typeof b?.error === "object" ? b.error?.message : b?.error ?? b?.detail ?? b?.message;
+  const text = typeof said === "string" ? said : JSON.stringify(body) ?? String(body);
+  return text.slice(0, 300);
 }
 
 const SETTINGS = z.object({
@@ -130,7 +148,10 @@ export function classify(err: unknown): LlmError {
       return new LlmError("credit", "the AI account is out of credit or busy");
     }
     if (status === 404) return new LlmError("modelNotFound", "the AI service doesn't offer that model");
-    return new LlmError("service", `the AI service returned ${status ?? "an error"}`);
+    return new LlmError("service", `the AI service returned ${status ?? "an error"}`, {
+      detail: vendorText(err.error ?? message),
+      formatIssue: status === 400 || status === 422,
+    });
   }
   return new LlmError("service", err instanceof Error ? err.message : "the AI request failed");
 }
@@ -147,6 +168,25 @@ interface JsonRequest<T extends z.ZodType> {
 }
 
 export async function generateJson<T extends z.ZodType>(
+  config: LlmConfig,
+  req: JsonRequest<T>,
+): Promise<z.output<T>> {
+  try {
+    return await attempt(config, req);
+  } catch (err) {
+    // Not every vendor takes strict-schema output, and they don't fail the
+    // same way: DeepSeek answers 400, FastAPI-style servers 422, some ignore
+    // it and send JSON of their own shape. Object mode puts the schema in the
+    // prompt instead, which they all understand, so try that once.
+    if (config.jsonMode === "schema" && err instanceof LlmError && err.formatIssue) {
+      console.warn(`[llm] schema mode failed (${err.message}), retrying in object mode`);
+      return attempt({ ...config, jsonMode: "object" }, req);
+    }
+    throw err;
+  }
+}
+
+async function attempt<T extends z.ZodType>(
   config: LlmConfig,
   req: JsonRequest<T>,
 ): Promise<z.output<T>> {
@@ -170,15 +210,28 @@ export async function generateJson<T extends z.ZodType>(
   try {
     data = JSON.parse(extractJson(text));
   } catch {
-    throw new LlmError("service", "the model's reply wasn't valid JSON");
+    throw new LlmError("service", "the model's reply wasn't valid JSON", { formatIssue: true });
   }
   const parsed = req.schema.safeParse(dropNulls(data));
   if (!parsed.success) {
     console.error("[llm] reply didn't match the schema:", parsed.error.issues);
-    throw new LlmError("service", "the model's reply didn't match the expected shape");
+    throw new LlmError("service", "the model's reply didn't match the expected shape", { formatIssue: true });
   }
   return parsed.data;
 }
+
+/* For vendors that don't take a schema as an output format: ask for it in
+   the prompt. (OpenAI's json_object mode also needs the word "JSON" there.) */
+const withSchema = (system: string, schema: Record<string, unknown>) =>
+  `${system}\n\nReply with only a JSON object that matches this JSON Schema:\n${JSON.stringify(schema)}`;
+
+/* A reply without the answer list: some vendors send an error this way, with
+   a 200 status. */
+const noAnswer = (res: unknown) =>
+  new LlmError("service", "the AI service sent a reply with no answer in it", {
+    detail: vendorText(res),
+    formatIssue: true,
+  });
 
 async function viaAnthropic(
   client: Anthropic,
@@ -187,17 +240,21 @@ async function viaAnthropic(
   schema: Record<string, unknown>,
 ): Promise<string> {
   const effort = req.reasoning === false ? undefined : config.effort;
+  const object = config.jsonMode === "object";
   const res = await client.messages.create({
     model: config.model,
     max_tokens: req.maxTokens,
     ...(effort && { thinking: { type: "adaptive" } }),
-    system: req.system,
-    output_config: {
-      format: { type: "json_schema", schema },
-      ...(effort && { effort: effort as Anthropic.OutputConfig["effort"] }),
-    },
+    system: object ? withSchema(req.system, schema) : req.system,
+    ...((!object || effort) && {
+      output_config: {
+        ...(!object && { format: { type: "json_schema", schema } }),
+        ...(effort && { effort: effort as Anthropic.OutputConfig["effort"] }),
+      },
+    }),
     messages: [{ role: "user", content: req.user }],
   });
+  if (!Array.isArray(res.content)) throw noAnswer(res);
   if (res.stop_reason === "refusal") throw new LlmError("service", "the model declined to answer");
   if (res.stop_reason === "max_tokens") throw new LlmError("service", "the model ran out of tokens");
   const block = res.content.find((b): b is Anthropic.TextBlock => b.type === "text");
@@ -215,11 +272,7 @@ async function viaOpenAIChat(
   const effort = req.reasoning === false ? undefined : config.effort;
 
   // Vendors without json_schema support get the schema in the prompt instead.
-  // json_object mode requires the word "JSON" in the messages; this adds it.
-  const system =
-    config.jsonMode === "object"
-      ? `${req.system}\n\nReply with only a JSON object that matches this JSON Schema:\n${JSON.stringify(schema)}`
-      : req.system;
+  const system = config.jsonMode === "object" ? withSchema(req.system, schema) : req.system;
 
   const res = await client.chat.completions.create({
     model: config.model,
@@ -243,10 +296,11 @@ async function viaOpenAIChat(
       { role: "user", content: req.user },
     ],
   });
-  const choice = res.choices[0];
-  if (choice?.message.refusal) throw new LlmError("service", "the model declined to answer");
-  if (choice?.finish_reason === "length") throw new LlmError("service", "the model ran out of tokens");
-  const text = choice?.message.content;
+  const choice = (res.choices as OpenAI.ChatCompletion.Choice[] | undefined)?.[0];
+  if (!choice) throw noAnswer(res);
+  if (choice.message?.refusal) throw new LlmError("service", "the model declined to answer");
+  if (choice.finish_reason === "length") throw new LlmError("service", "the model ran out of tokens");
+  const text = choice.message?.content;
   if (!text) throw new LlmError("service", "the model returned no text");
   return text;
 }

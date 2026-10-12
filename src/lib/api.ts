@@ -32,12 +32,16 @@ async function postJSON<T>(url: string, body: object, withAi = false): Promise<T
   return res.json() as Promise<T>;
 }
 
-/* Checks AI settings before saving (free: lists the key's models). With
-   listOnly, just lists them for the model picker. */
+/* Checks AI settings before saving (lists the key's models; for a custom
+   service, also which JSON mode it needs). With listOnly, just lists them
+   for the model picker. */
 export async function checkAi(
   ai: AiSettings,
   listOnly = false,
-): Promise<{ ok: true; models: string[] | null } | { ok: false; reason: CheckFailure }> {
+): Promise<
+  | { ok: true; models: string[] | null; jsonMode?: "schema" | "object" }
+  | { ok: false; reason: CheckFailure }
+> {
   try {
     return await postJSON("/api/ai/check", { ai, listOnly });
   } catch {

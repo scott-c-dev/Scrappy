@@ -5,6 +5,8 @@ import { generateJson, llmConfig } from "@/lib/server/llm";
 import { mockAI, mockDelay, mockFailure, mockPref } from "@/lib/server/mock";
 
 export const runtime = "nodejs";
+// Above the AI call's own 120 s deadline (lib/server/llm.ts), so ours fires first.
+export const maxDuration = 150;
 
 /* Allowed values per preference key — mirrors PREFOPTS on the client. */
 const OPTIONS = {

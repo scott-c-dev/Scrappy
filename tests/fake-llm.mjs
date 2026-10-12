@@ -10,7 +10,7 @@ export function startFakeLlm() {
   const state = {
     requests: [],
     /* ok | badjson | wrongshape | fenced | truncated | refusal | redirect
-       | 400 | 400credit | 401 | 402 | 404 | 429 | models404 | noanswer
+       | 400 | 400credit | 401 | 402 | 404 | 429 | models404 | noanswer | slow
        | schema400 | schema422 | schemaIgnored: how vendors without strict-schema
        output react to it (fine once the schema comes in the prompt instead) */
     mode: "ok",
@@ -40,6 +40,8 @@ export function startFakeLlm() {
       if (mode === "400credit") return fail(400, "Your credit balance is too low to access the API");
       if (mode === "400") return fail(400, "unsupported parameter");
       if (mode === "404") return fail(404, "model not found");
+      // Answers long after any test's timeout.
+      if (mode === "slow") return void setTimeout(() => send(200, {}), 2000);
 
       // A strict-schema request: OpenAI's response_format, or Anthropic's output_config.format.
       const schemaAsked = body.response_format?.type === "json_schema" || !!body.output_config?.format;

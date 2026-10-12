@@ -47,4 +47,4 @@ export const modelOf = (ai: AiSettings): string =>
 export type CheckFailure = "wrongKey" | "modelNotFound" | "unreachable" | "privateAddress";
 
 /* Why an AI request failed, as far as the app needs to know. */
-export type AiFailure = "credit" | "refused" | "service";
+export type AiFailure = "credit" | "refused" | "modelNotFound" | "unreachable" | "timeout" | "service";

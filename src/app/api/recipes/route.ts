@@ -214,7 +214,8 @@ export async function POST(req: Request) {
       if (violations.length) dishes = strip(dishes, allowed);
     }
 
-    const mapped = dishes.map(toDish);
+    // Models sometimes over-deliver; never show more than were asked for.
+    const mapped = dishes.slice(0, count).map(toDish);
     return isSwap
       ? NextResponse.json({ dish: mapped[0] })
       : NextResponse.json({ dishes: mapped });

@@ -230,27 +230,29 @@ function steps(uses: string[]): Step[] {
 function mockDish(ingredients: Ingredient[], style: number, rescue: string[], idx: number, note?: string): Dish {
   const s = STYLES[style % STYLES.length];
   // Lead with what needs rescuing, then fill in from the rest of the list.
-  const names = [...rescue, ...ingredients.map((i) => i.name).filter((n) => !rescue.includes(n))];
-  const rotated = [...names.slice(idx % names.length), ...names.slice(0, idx % names.length)];
-  const lead = rescue.length ? [rescue[idx % rescue.length], ...rotated.filter((n) => n !== rescue[idx % rescue.length])] : rotated;
+  const ids = [...rescue, ...ingredients.map((i) => i.id).filter((id) => !rescue.includes(id))];
+  const rotated = [...ids.slice(idx % ids.length), ...ids.slice(0, idx % ids.length)];
+  const first = rescue[idx % rescue.length];
+  const lead = rescue.length ? [first, ...rotated.filter((id) => id !== first)] : rotated;
   const uses = lead.slice(0, 3);
-  const [a, b = "Scallions"] = uses;
+  const names = uses.map((id) => ingredients.find((i) => i.id === id)!.name);
+  const [a, b = "Scallions"] = names;
   const name = s.name(a, b);
   return {
     id: `dish-${idx}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     name,
     short: s.short,
     blurb: note ? `${s.blurb} (You asked: “${note}”.)` : s.blurb,
-    rescue: uses.filter((u) => rescue.includes(u)),
     uses,
-    steps: steps(uses),
+    pantry: ["oil", "salt"],
+    steps: steps(names),
   };
 }
 
 const onTheClock = (ingredients: Ingredient[]) =>
   ingredients
     .filter((i) => i.tag === "going bad" || i.tag === "use soon")
-    .map((i) => i.name);
+    .map((i) => i.id);
 
 export function mockDishes(ingredients: Ingredient[], count: number): Dish[] {
   const rescue = onTheClock(ingredients);
@@ -259,13 +261,11 @@ export function mockDishes(ingredients: Ingredient[], count: number): Dish[] {
 
 export function mockSwap(
   ingredients: Ingredient[],
-  keepRescue: string[],
+  keep: string[],
   exclude: string[],
   note?: string,
 ): Dish {
-  const rescue = keepRescue.length
-    ? keepRescue
-    : onTheClock(ingredients);
+  const rescue = keep.length ? keep : onTheClock(ingredients);
   // First style whose dish name isn't already on screen.
   for (let i = 0; i < STYLES.length * 2; i++) {
     const d = mockDish(ingredients, i, rescue, i + exclude.length, note);

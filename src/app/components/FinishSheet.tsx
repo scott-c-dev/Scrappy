@@ -1,9 +1,12 @@
+import { cx } from "@/lib/cx";
 import { PrimaryButton, SecondaryButton, Sheet, Spinner } from "./ui";
 
 interface FinishSheetProps {
   finaleUrl: string | null;
   finaleLoading: boolean;
   finishText: string;
+  /* Amber when something on the clock was used, green otherwise. */
+  urgent: boolean;
   onBack: () => void;
   onRestart: () => void;
 }
@@ -12,6 +15,7 @@ export function FinishSheet({
   finaleUrl,
   finaleLoading,
   finishText,
+  urgent,
   onBack,
   onRestart,
 }: FinishSheetProps) {
@@ -31,8 +35,13 @@ export function FinishSheet({
           )}
         </div>
       )}
-      <div className="flex w-full items-start gap-11 rounded-tile bg-rescue-bg px-15 py-14">
-        <span className="mt-4 size-9 flex-none rounded-full bg-rescue" />
+      <div
+        className={cx(
+          "flex w-full items-start gap-11 rounded-tile px-15 py-14",
+          urgent ? "bg-rescue-bg" : "bg-fresh-bg",
+        )}
+      >
+        <span className={cx("mt-4 size-9 flex-none rounded-full", urgent ? "bg-rescue" : "bg-fresh")} />
         <div className="text-15 leading-[1.4] font-bold text-ink">{finishText}</div>
       </div>
       <div className="mt-2 flex w-full gap-10">

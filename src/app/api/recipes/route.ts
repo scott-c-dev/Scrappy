@@ -3,7 +3,7 @@ import { z } from "zod";
 import { aiErrorResponse } from "@/lib/server/aiResponse";
 import { generateJson, llmConfig, type LlmConfig } from "@/lib/server/llm";
 import { mockAI, mockDelay, mockDishes, mockSwap } from "@/lib/server/mock";
-import { allowedSet, normalize, STAPLES } from "@/lib/staples";
+import { isStaple, normalize, STAPLES } from "@/lib/staples";
 import type { Dish, Ingredient, Prefs, Step } from "@/lib/types";
 import { amountText, type UnitSystem } from "@/lib/units";
 
@@ -18,8 +18,8 @@ interface Body {
   units?: UnitSystem;
   /* Swap mode: replace this dish with one alternative... */
   swapDishId?: string;
-  /* ...while still rescuing these expiring ingredients (§2). */
-  keepRescue?: string[];
+  /* ...while still using these expiring ingredients (ids) (§2). */
+  keep?: string[];
   /* Dish names to avoid repeating on a swap. */
   exclude?: string[];
   /* Optional spoken ad-hoc preference for this swap (e.g. "make it spicier"). */
@@ -28,31 +28,46 @@ interface Body {
   ai?: unknown;
 }
 
-const DISH_SCHEMA = z.object({
-  name: z.string(),
-  short: z.string(),
-  blurb: z.string(),
-  rescue: z.array(z.string()),
-  uses: z.array(z.string()),
-  steps: z.array(
-    z.object({
-      text: z.string(),
-      // Optional: in plain JSON mode some models (DeepSeek) leave it out
-      // when it's false. A missing one means no picture.
-      needsImage: z.boolean().optional(),
-      cap: z.string().optional(),
-      imagePrompt: z.string().optional(),
-    }),
-  ),
-});
+/* The model names the user's ingredients by a short ref ("i1", "i2"…) from
+   the prompt, never by name, so the app knows exactly which item it means
+   and can show it under the user's own name and freshness. */
+const refOf = (index: number) => `i${index + 1}`;
 
-const SCHEMA = z.object({ dishes: z.array(DISH_SCHEMA) });
+/* `wire` is what the model is told to produce: refs and staples as enums,
+   which vendors with strict structured output enforce while generating.
+   We parse with plain strings so a vendor that only reads the schema as a
+   hint can't fail the whole reply over one bad item; clean() drops those. */
+function dishSchema(refs: string[], wire: boolean) {
+  const fridge = wire ? z.array(z.enum(refs as [string, ...string[]])) : z.array(z.string());
+  const pantry = wire ? z.array(z.enum(STAPLES)) : z.array(z.string());
+  return z.object({
+    dishes: z.array(
+      z.object({
+        name: z.string(),
+        short: z.string(),
+        blurb: z.string(),
+        fridge,
+        pantry,
+        steps: z.array(
+          z.object({
+            text: z.string(),
+            // Optional: in plain JSON mode some models (DeepSeek) leave it
+            // out when it's false. A missing one means no picture.
+            needsImage: z.boolean().optional(),
+            cap: z.string().optional(),
+            imagePrompt: z.string().optional(),
+          }),
+        ),
+      }),
+    ),
+  });
+}
 
-type RawDish = z.output<typeof DISH_SCHEMA>;
+type RawDish = z.output<ReturnType<typeof dishSchema>>["dishes"][number];
 
 function ingredientLines(ings: Ingredient[]): string {
   return ings
-    .map((i) => {
+    .map((i, idx) => {
       const tier =
         i.tag === "going bad"
           ? " [GOING BAD — rescue first]"
@@ -61,7 +76,7 @@ function ingredientLines(ings: Ingredient[]): string {
             : i.tag === "fresh"
               ? " [fresh]"
               : " [freshness not stated]";
-      return `- ${i.name} (${amountText(i)})${tier}`;
+      return `- [${refOf(idx)}] ${i.name} (${amountText(i)})${tier}`;
     })
     .join("\n");
 }
@@ -72,12 +87,12 @@ function systemPrompt(prefs: Prefs, units: UnitSystem): string {
 HARD CONSTRAINT (non-negotiable):
 - You may use ONLY the ingredients in the user's list PLUS this basic pantry-staples whitelist: ${STAPLES.join(", ")}.
 - Do NOT introduce any other ingredient. If a classic version of a dish would need something the user doesn't have, adapt the dish so it doesn't, or pick a different dish. Never silently add an ingredient.
-- Every ingredient named in a recipe's "uses" list MUST be either in the user's list or in the whitelist.
+- Every ingredient a dish uses MUST be listed in its "fridge" (the user's items) or "pantry" (whitelist staples) array.
 
 WASTE-PREVENTION PRIORITY (the whole point):
 - Build dishes around ingredients marked [GOING BAD] first, then [use soon], then the rest.
 - For ingredients marked [freshness not stated], judge by how quickly that food usually spoils (leafy greens, herbs, berries, fish and dairy go before rice, potatoes or onions) and favour the more perishable ones.
-- Each dish's "rescue" array = the GOING BAD / use-soon ingredients that dish actually uses up. It must be a subset of "uses".
+- Across the dishes, use EVERY [GOING BAD] ingredient, then every [use soon] one, as far as the number of dishes allows. Don't leave one out just because another dish would be easier.
 
 AMOUNTS:
 - Respect the amounts listed; don't use more than the user has. "as needed" means the amount wasn't given — use a sensible quantity.
@@ -87,9 +102,9 @@ Per dish provide:
 - name: an appetising dish name.
 - short: a 1-2 word tab label.
 - blurb: one warm sentence (no emoji).
-- uses: the user-list/whitelist ingredients the dish draws on (title-case names).
-- rescue: the expiring ingredients it uses up.
-- steps: ordered cooking steps. Set needsImage=true ONLY for steps where a visual is genuinely indispensable (knife technique, a doneness/heat state); everything else needsImage=false. Keep steps concise and practical. For each needsImage step, ALSO provide:
+- fridge: the refs (like "i1") of every item from the user's list the dish uses. Always use the ref, never a name. If the user listed something that is also a staple (e.g. scallions), it goes here by its ref, not in pantry.
+- pantry: the whitelist staples it uses that the user did NOT list, written exactly as in the whitelist.
+- steps: ordered cooking steps, naming ingredients in plain words (not refs). Set needsImage=true ONLY for steps where a visual is genuinely indispensable (knife technique, a doneness/heat state); everything else needsImage=false. Keep steps concise and practical. For each needsImage step, ALSO provide:
   - cap: a short caption like "reference · the golden side".
   - imagePrompt: a concrete, one-sentence VISUAL description of the ACTION this step performs — the technique in progress: what the hands / knife / pan are doing and what the ingredient looks like AT THIS MOMENT (raw, half-cooked, browning, etc.). Example: for "Dice the bacon", write "a chef's knife dicing raw bacon strips into small even cubes on a wooden cutting board, hands guiding the blade". Describe the in-progress action ONLY — never the finished or plated dish, no dish name, no final result, no serving plate.
 
@@ -110,44 +125,41 @@ Design ${count} ${count === 1 ? "dish" : "distinct dishes"} under the hard const
   const { dishes } = await generateJson(config, {
     system: systemPrompt(body.prefs, body.units === "imperial" ? "imperial" : "metric"),
     user: userText,
-    schema: SCHEMA,
+    schema: dishSchema([], false),
+    wireSchema: dishSchema(body.ingredients.map((_, i) => refOf(i)), true),
     maxTokens: 8000,
   });
   return dishes;
 }
 
-/* The §7 validation pass: find ingredients a dish claims to use that are
-   outside (user list ∪ staples). Returns the offending names per dish. */
-function findViolations(dishes: RawDish[], allowed: Set<string>): string[] {
-  const bad = new Set<string>();
-  for (const d of dishes) {
-    for (const u of [...d.uses, ...d.rescue]) {
-      if (!allowed.has(normalize(u))) bad.add(u);
+/* The §7 validation pass. Maps each dish's refs back to ingredient ids and
+   keeps only whitelist staples; a staple the user also listed counts as
+   their item. Returns what had to be dropped (not on the list or the
+   whitelist), so the caller can re-prompt once before accepting the rest. */
+function clean(dishes: RawDish[], ings: Ingredient[]): { dishes: Dish[]; dropped: string[] } {
+  const byRef = new Map(ings.map((ing, i) => [refOf(i), ing.id]));
+  const byName = new Map(ings.map((ing) => [normalize(ing.name), ing.id]));
+  const dropped = new Set<string>();
+  const out = dishes.map((d, idx) => {
+    const uses = new Set<string>();
+    const pantry = new Set<string>();
+    for (const r of d.fridge) {
+      const id = byRef.get(r.trim()) ?? byName.get(normalize(r));
+      if (id) uses.add(id);
+      else dropped.add(r);
     }
-  }
-  return [...bad];
-}
-
-/* Last-resort cleanup if the model still won't comply: strip out-of-set
-   ingredients and log what was removed. */
-function strip(dishes: RawDish[], allowed: Set<string>): RawDish[] {
-  return dishes.map((d) => {
-    const removed = [...d.uses, ...d.rescue].filter((u) => !allowed.has(normalize(u)));
-    if (removed.length) {
-      console.warn(
-        `[/api/recipes] stripped non-allowed ingredients from "${d.name}":`,
-        removed,
-      );
+    for (const p of d.pantry) {
+      const id = byName.get(normalize(p));
+      if (id) uses.add(id);
+      else if (isStaple(p)) pantry.add(STAPLES.find((st) => normalize(st) === normalize(p))!);
+      else dropped.add(p);
     }
-    return {
-      ...d,
-      uses: d.uses.filter((u) => allowed.has(normalize(u))),
-      rescue: d.rescue.filter((u) => allowed.has(normalize(u))),
-    };
+    return toDish(d, idx, [...uses], [...pantry]);
   });
+  return { dishes: out, dropped: [...dropped] };
 }
 
-function toDish(raw: RawDish, idx: number): Dish {
+function toDish(raw: RawDish, idx: number, uses: string[], pantry: string[]): Dish {
   const steps: Step[] = raw.steps.map((s) => ({
     text: s.text,
     img: !!s.needsImage,
@@ -159,8 +171,8 @@ function toDish(raw: RawDish, idx: number): Dish {
     name: raw.name,
     short: raw.short || raw.name,
     blurb: raw.blurb,
-    rescue: raw.rescue,
-    uses: raw.uses,
+    uses,
+    pantry,
     steps,
   };
 }
@@ -176,7 +188,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "no ingredients provided" }, { status: 400 });
   }
 
-  const allowed = allowedSet(body.ingredients.map((i) => i.name));
   const isSwap = !!body.swapDishId;
   const count = isSwap ? 1 : Math.max(1, Math.min(5, body.prefs.courses || 3));
 
@@ -186,14 +197,15 @@ export async function POST(req: Request) {
     await mockDelay(1500);
     return isSwap
       ? NextResponse.json({
-          dish: mockSwap(body.ingredients, body.keepRescue ?? [], body.exclude ?? [], note),
+          dish: mockSwap(body.ingredients, body.keep ?? [], body.exclude ?? [], note),
         })
       : NextResponse.json({ dishes: mockDishes(body.ingredients, count) });
   }
+  const keep = body.ingredients.filter((i) => body.keep?.includes(i.id)).map((i) => i.name);
   const extra = isSwap
     ? `\n\nThis replaces a previous dish. Pick something different${
         body.exclude?.length ? ` from: ${body.exclude.join(", ")}` : ""
-      }, but it MUST still use up these expiring ingredients: ${(body.keepRescue ?? []).join(", ") || "the ones marked GOING BAD"}.${
+      }, but it MUST still use up these expiring ingredients: ${keep.join(", ") || "the ones marked GOING BAD"}.${
         note
           ? ` The user also asked: "${note}". Honour this preference as far as the hard ingredient constraint and the rescue requirement allow; if it conflicts (e.g. asks to drop an expiring ingredient), keep the rescue and adapt the rest.`
           : ""
@@ -202,27 +214,28 @@ export async function POST(req: Request) {
 
   try {
     const config = llmConfig(body.ai);
-    let dishes = await generate(config, body, count, extra);
+    let { dishes, dropped } = clean(await generate(config, body, count, extra), body.ingredients);
 
-    // §7 validation: one corrective re-prompt, then strip as a backstop.
-    let violations = findViolations(dishes, allowed);
-    if (violations.length) {
-      console.warn("[/api/recipes] violations, re-prompting:", violations);
-      dishes = await generate(
-        config,
-        body,
-        count,
-        `${extra}\n\nYour previous attempt used ingredients NOT in my list or the whitelist: ${violations.join(", ")}. Regenerate using ONLY my ingredients plus the whitelist — drop or substitute those items.`,
-      );
-      violations = findViolations(dishes, allowed);
-      if (violations.length) dishes = strip(dishes, allowed);
+    // §7 validation: one corrective re-prompt, then drop what's left over.
+    if (dropped.length) {
+      console.warn("[/api/recipes] not on the list or whitelist, re-prompting:", dropped);
+      ({ dishes, dropped } = clean(
+        await generate(
+          config,
+          body,
+          count,
+          `${extra}\n\nYour previous attempt used ingredients NOT in my list or the whitelist: ${dropped.join(", ")}. Regenerate using ONLY my ingredients (by ref) plus the whitelist — drop or substitute those items.`,
+        ),
+        body.ingredients,
+      ));
+      if (dropped.length) console.warn("[/api/recipes] dropped:", dropped);
     }
 
     // Models sometimes over-deliver; never show more than were asked for.
-    const mapped = dishes.slice(0, count).map(toDish);
+    dishes = dishes.slice(0, count);
     return isSwap
-      ? NextResponse.json({ dish: mapped[0] })
-      : NextResponse.json({ dishes: mapped });
+      ? NextResponse.json({ dish: dishes[0] })
+      : NextResponse.json({ dishes });
   } catch (err) {
     return aiErrorResponse("/api/recipes", err);
   }

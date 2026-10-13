@@ -20,6 +20,7 @@ import {
 } from "@/lib/voice";
 import { PREF_TITLES, type PrefKey } from "@/lib/prefs";
 import { defaultUnitSystem, type UnitSystem } from "@/lib/units";
+import { onTheClock } from "../components/freshness";
 import { isPref, type VoiceErrorAction, type VoiceErrorKind } from "../voiceErrors";
 
 export type Screen = "input" | "settings" | "aiSetup" | "confirm" | "dishes" | "cook";
@@ -330,7 +331,9 @@ export function useScrappy() {
         prefs: stateRef.current.prefs,
         units: stateRef.current.units,
         swapDishId: id,
-        keepRescue: dish.rescue,
+        keep: stateRef.current.ingredients
+          .filter((i) => dish.uses.includes(i.id) && onTheClock(i.tag))
+          .map((i) => i.id),
         exclude: stateRef.current.dishes.map((d) => d.name),
         note,
       });

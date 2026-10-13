@@ -1,4 +1,7 @@
-import type { Dish } from "@/lib/types";
+import { cx } from "@/lib/cx";
+import type { Dish, FreshnessTag, Ingredient } from "@/lib/types";
+import { countLabel, footerLine, itemsOf, loadingLine, pantryLine, topClaim } from "./dishCopy";
+import { onTheClock } from "./freshness";
 import { SwapIcon } from "./SwapSheet";
 import { PrimaryButton, Spinner, StickyBar } from "./ui";
 
@@ -6,8 +9,7 @@ interface DishesScreenProps {
   loading: boolean;
   dishes: Dish[];
   replacingId: string | null;
-  goingBad: string[];
-  rescueCount: number;
+  ingredients: Ingredient[];
   onSwap: (id: string) => void;
   onStartCook: () => void;
 }
@@ -16,8 +18,7 @@ export function DishesScreen({
   loading,
   dishes,
   replacingId,
-  goingBad,
-  rescueCount,
+  ingredients,
   onSwap,
   onStartCook,
 }: DishesScreenProps) {
@@ -30,36 +31,26 @@ export function DishesScreen({
             Raiding your fridge…
           </div>
           <div className="mt-8 max-w-250 text-14 leading-[1.45] text-ink-soft">
-            Putting the cabbage and tofu at the front of the queue. Two seconds.
+            {loadingLine(ingredients)}
           </div>
         </div>
       </div>
     );
   }
 
-  const n = dishes.length;
-  const topClaim = goingBad.length
-    ? (n === 1 ? "This leans" : "These lean") +
-      " on your " +
-      goingBad.join(" & ").toLowerCase() +
-      " first — the stuff on the clock."
-    : n === 1
-      ? "One quick thing from what you’ve got."
-      : capitalize(numberWord(n)) + " quick things from what you’ve got.";
-  const rescueLine =
-    "That’s " + rescueCount + (rescueCount === 1 ? " thing" : " things") +
-    " saved from the bin today. Not bad.";
+  const urgent = dishes.some((d) => itemsOf(d, ingredients).some((i) => onTheClock(i.tag)));
+  const dot = urgent ? "bg-rescue" : "bg-fresh";
 
   return (
     <>
       <div className="flex animate-risein flex-col gap-13 px-18 pt-10 pb-8">
-        <div className="flex items-start gap-11 rounded-tile bg-fresh-bg px-14 py-13">
-          <span className="mt-4 size-9 flex-none rounded-full bg-fresh" />
-          <div className="text-14 leading-[1.35] font-bold text-ink">{topClaim}</div>
+        <div className={cx("flex items-start gap-11 rounded-tile px-14 py-13", urgent ? "bg-rescue-bg" : "bg-fresh-bg")}>
+          <span className={cx("mt-4 size-9 flex-none rounded-full", dot)} />
+          <div className="text-14 leading-[1.35] font-bold text-ink">
+            {topClaim(dishes, ingredients)}
+          </div>
         </div>
-        <span className="label-caps text-muted">
-          {n} {n === 1 ? "dish" : "dishes"} · no extra shopping
-        </span>
+        <span className="label-caps text-muted">{countLabel(dishes.length)}</span>
         {dishes.map((d) => (
           <div
             key={d.id}
@@ -80,23 +71,18 @@ export function DishesScreen({
                 Swap
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-8 rounded-inner bg-rescue-bg px-11 py-7">
-              <span className="font-label text-10 font-bold tracking-[.05em] text-rescue uppercase">
-                Uses up
-              </span>
-              <span className="text-13 font-bold text-ink">
-                {(d.rescue || []).join(" · ")}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-6">
-              {d.uses.map((u, ui) => (
-                <span
-                  key={ui}
-                  className="rounded-full border border-line bg-paper px-9 py-4 text-12 text-ink-soft"
-                >
-                  {u}
-                </span>
-              ))}
+            <div className="flex flex-col gap-7">
+              <div className="flex flex-wrap gap-6">
+                {itemsOf(d, ingredients).map((i) => (
+                  <span key={i.id} className={cx(CHIP_BASE, CHIP[tierKey(i.tag)])}>
+                    {i.tag && <span className={cx("size-6 flex-none rounded-full", DOT[i.tag])} />}
+                    {i.name}
+                  </span>
+                ))}
+              </div>
+              {d.pantry.length > 0 && (
+                <span className="text-12 leading-[1.4] text-muted">{pantryLine(d.pantry)}</span>
+              )}
             </div>
             {replacingId === d.id && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-11 rounded-card bg-card">
@@ -106,9 +92,15 @@ export function DishesScreen({
             )}
           </div>
         ))}
-        <div className="flex items-center justify-center gap-8 pt-4 pb-2 text-center text-13 text-muted">
-          <span className="size-6 flex-none rounded-full bg-fresh" />
-          {rescueLine}
+        {/* Faded while a swap is out, so it never shows a count that's about to change. */}
+        <div
+          className={cx(
+            "flex items-center justify-center gap-8 pt-4 pb-2 text-center text-13 text-muted transition-opacity duration-200",
+            replacingId && "opacity-45",
+          )}
+        >
+          <span className={cx("size-6 flex-none rounded-full", dot)} />
+          {footerLine(dishes, ingredients)}
         </div>
       </div>
       <StickyBar className="px-18 pt-12 pb-16">
@@ -120,12 +112,15 @@ export function DishesScreen({
   );
 }
 
-const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-
-function numberWord(n: number): string {
-  return NUMBER_WORDS[n] ?? String(n);
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
+/* Chip weight follows urgency: going bad keeps the confirm screen's fill and
+   heavier border; fresh gets only its dot, so cards don't turn green; not
+   sure is the plainest chip. */
+const CHIP_BASE = "inline-flex items-center gap-5 rounded-full text-12 leading-[1.2]";
+const CHIP = {
+  "going bad": "border-[1.5px] border-rescue bg-rescue-bg px-8.5 py-3.5 font-bold text-ink",
+  "use soon": "border border-soon bg-soon-bg px-9 py-4 font-semibold text-ink",
+  fresh: "border border-line bg-paper px-9 py-4 font-medium text-ink",
+  "not sure": "border border-line bg-paper px-9 py-4 text-ink-soft",
+};
+const DOT = { "going bad": "bg-rescue", "use soon": "bg-soon", fresh: "bg-fresh" };
+const tierKey = (tag: FreshnessTag) => tag ?? "not sure";

@@ -62,8 +62,9 @@ try {
   await shot("dishes");
   const dishText = (await page.locator("body").innerText()).toLowerCase();
   log("dishes screen reached");
-  if (!dishText.includes("uses up")) throw new Error("no rescue tag on dishes");
-  log("  ✓ recipe cards with 'Uses up' rescue tags present");
+  if (!/\d+ things? from your fridge/.test(dishText)) throw new Error("no fridge count under the dishes");
+  if (!dishText.includes("on the clock")) throw new Error("going-bad items not called out on dishes");
+  log("  ✓ recipe cards with the fridge count and on-the-clock claim present");
 
   // Cook
   await page.getByRole("button", { name: "Let's cook these" }).click();

@@ -14,7 +14,7 @@ import { SwapSheet } from "./components/SwapSheet";
 import { AdjustSheet } from "./components/AdjustSheet";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { AiKeyCard, AiSetupScreen } from "./components/AiService";
-import { onTheClock } from "./components/freshness";
+import { finishLine, swapLine } from "./components/dishCopy";
 import { voiceErrorView } from "./voiceErrors";
 
 export default function Scrappy() {
@@ -60,16 +60,7 @@ export default function Scrappy() {
     setState,
   } = useScrappy();
 
-  const goingBad = s.ingredients
-    .filter((i) => i.tag === "going bad")
-    .map((i) => i.name);
-  const rescueCount = s.ingredients.filter((i) => onTheClock(i.tag)).length;
-  const finishText = goingBad.length
-    ? "You used up your " +
-      goingBad.join(", ").toLowerCase() +
-      (rescueCount > goingBad.length ? " (and more)" : "") +
-      " before they turned."
-    : "Good cooking.";
+  const finish = finishLine(s.dishes, s.ingredients);
 
   const progressStep = { input: 0, settings: 0, aiSetup: 0, confirm: 1, dishes: 2, cook: 3 }[s.screen];
   const inSettings = s.screen === "settings" || s.screen === "aiSetup";
@@ -175,8 +166,7 @@ export default function Scrappy() {
               loading={s.dishesLoading}
               dishes={s.dishes}
               replacingId={s.replacingId}
-              goingBad={goingBad}
-              rescueCount={rescueCount}
+              ingredients={s.ingredients}
               onSwap={openSwap}
               onStartCook={startCook}
             />
@@ -228,7 +218,7 @@ export default function Scrappy() {
         )}
         {swapSheetDish && (
           <SwapSheet
-            dishName={swapSheetDish.name}
+            line={swapLine(swapSheetDish, s.ingredients)}
             onSwap={swapNow}
             onVoice={swapByVoice}
             onType={swapByText}
@@ -251,7 +241,8 @@ export default function Scrappy() {
           <FinishSheet
             finaleUrl={s.finaleUrl}
             finaleLoading={s.finaleLoading}
-            finishText={finishText}
+            finishText={finish.text}
+            urgent={finish.urgent}
             onBack={() => setState({ finishOpen: false })}
             onRestart={restart}
           />

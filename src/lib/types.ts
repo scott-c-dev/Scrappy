@@ -39,10 +39,11 @@ export interface Dish {
   name: string;
   short: string;
   blurb: string;
-  /* Expiring ingredients this dish uses up — drives the "Uses up · …" tag. */
-  rescue: string[];
-  /* All listed ingredients the dish draws on (used for the chips). */
+  /* Ids of the user's own ingredients this dish draws on. The chips show
+     them under the user's names, ordered and tinted by their freshness. */
   uses: string[];
+  /* Pantry staples it also needs (lower-case, from lib/staples.ts). */
+  pantry: string[];
   steps: Step[];
 }
 

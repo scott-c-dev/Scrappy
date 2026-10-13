@@ -4,10 +4,13 @@ import type { AiFailure } from "@/lib/ai";
 import { classify } from "./llm";
 
 /* The 502 an AI route returns when its LLM call fails. `kind` tells the app
-   which message to show: out of credit, key refused, or a generic failure. */
+   why: out of credit, key refused, model not offered, address unreachable,
+   no answer in time, or anything else. */
 export function aiErrorResponse(route: string, err: unknown) {
   const e = classify(err);
-  console.error(`[${route}] ${e.kind}: ${e.message}`);
-  const kind: AiFailure = e.kind === "credit" || e.kind === "refused" ? e.kind : "service";
+  console.error(`[${route}] ${e.kind}: ${e.message}${e.detail ? ` — vendor said: ${e.detail}` : ""}`);
+  // A private address is caught when the settings are saved; if one gets
+  // here anyway, to the user it's just an address that can't be reached.
+  const kind: AiFailure = e.kind === "privateAddress" ? "unreachable" : e.kind;
   return NextResponse.json({ error: e.message, kind }, { status: 502 });
 }

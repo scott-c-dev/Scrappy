@@ -1,5 +1,6 @@
 /* Server-only LLM client. The user's AI settings (their own key — "bring your
-   own key") arrive with each request; nothing is stored or logged here.
+   own key") arrive with each request; nothing is stored here, and only a
+   vendor's own error text is logged (never the settings or the key).
 
    Every call Scrappy makes has the same shape — a system prompt, one user
    message, and a JSON reply matching a schema — so one function covers both
@@ -36,16 +37,34 @@ export type LlmFailureKind =
   | "credit" // out of credit, or rate-limited
   | "modelNotFound"
   | "unreachable"
+  | "timeout" // reached it, but no answer in time
   | "privateAddress"
   | "service"; // anything else, incl. a reply we couldn't use
 
 export class LlmError extends Error {
+  /* The vendor's own words, for the server log only — never sent to the app. */
+  readonly detail?: string;
+  /* Looks like the vendor didn't take strict-schema output (a 400/422, an
+     answer-less reply, or JSON we couldn't use): worth one retry in object mode. */
+  readonly formatIssue: boolean;
   constructor(
     readonly kind: LlmFailureKind,
     message: string,
+    opts: { detail?: string; formatIssue?: boolean } = {},
   ) {
     super(message);
+    this.detail = opts.detail;
+    this.formatIssue = opts.formatIssue ?? false;
   }
+}
+
+/* A short excerpt of what a vendor sent, for the log: its error message when
+   the body has one, else the start of the body. */
+function vendorText(body: unknown): string {
+  const b = body as { error?: { message?: unknown } | string; detail?: unknown; message?: unknown } | null;
+  const said = typeof b?.error === "object" ? b.error?.message : b?.error ?? b?.detail ?? b?.message;
+  const text = typeof said === "string" ? said : JSON.stringify(body) ?? String(body);
+  return text.slice(0, 300);
 }
 
 const SETTINGS = z.object({
@@ -118,6 +137,16 @@ async function clientFor(config: LlmConfig, timeout: number) {
 export function classify(err: unknown): LlmError {
   if (err instanceof LlmError) return err;
   if (err instanceof PrivateAddressError) return new LlmError("privateAddress", "private address");
+  // Our own deadline cancels the request (an "abort" to the SDKs); the
+  // per-attempt timeout is a subclass of the connection error below.
+  if (
+    err instanceof Anthropic.APIUserAbortError ||
+    err instanceof OpenAI.APIUserAbortError ||
+    err instanceof Anthropic.APIConnectionTimeoutError ||
+    err instanceof OpenAI.APIConnectionTimeoutError
+  ) {
+    return new LlmError("timeout", "the AI service took too long to answer");
+  }
   if (err instanceof Anthropic.APIConnectionError || err instanceof OpenAI.APIConnectionError) {
     return new LlmError("unreachable", "couldn't reach the AI service");
   }
@@ -130,12 +159,20 @@ export function classify(err: unknown): LlmError {
       return new LlmError("credit", "the AI account is out of credit or busy");
     }
     if (status === 404) return new LlmError("modelNotFound", "the AI service doesn't offer that model");
-    return new LlmError("service", `the AI service returned ${status ?? "an error"}`);
+    return new LlmError("service", `the AI service returned ${status ?? "an error"}`, {
+      detail: vendorText(err.error ?? message),
+      formatIssue: status === 400 || status === 422,
+    });
   }
   return new LlmError("service", err instanceof Error ? err.message : "the AI request failed");
 }
 
 // ── Generating JSON ────────────────────────────────────────────────────────
+
+/* How long one AI call may take in total. The AI routes set maxDuration a
+   little above this (150 s), so Vercel (300 s cap on Hobby) never cuts one
+   off first and the app always gets our "timeout" answer. */
+const DEADLINE_MS = 120_000;
 
 interface JsonRequest<T extends z.ZodType> {
   system: string;
@@ -144,11 +181,39 @@ interface JsonRequest<T extends z.ZodType> {
   maxTokens: number;
   /* false for trivial calls where thinking only adds latency. */
   reasoning?: boolean;
+  /* The whole call's time budget in ms (default 120 s): every attempt
+     shares it, the SDK's own retries and the object-mode fallback alike. */
+  timeout?: number;
 }
 
 export async function generateJson<T extends z.ZodType>(
   config: LlmConfig,
   req: JsonRequest<T>,
+): Promise<z.output<T>> {
+  // One deadline for everything below. The SDKs never retry a request we
+  // cancel, so when it passes, the whole call stops: a slow model costs the
+  // user one wait, not one per retry — and stays inside the route's
+  // maxDuration on Vercel.
+  const deadline = AbortSignal.timeout(req.timeout ?? DEADLINE_MS);
+  try {
+    return await attempt(config, req, deadline);
+  } catch (err) {
+    // Not every vendor takes strict-schema output, and they don't fail the
+    // same way: DeepSeek answers 400, FastAPI-style servers 422, some ignore
+    // it and send JSON of their own shape. Object mode puts the schema in the
+    // prompt instead, which they all understand, so try that once.
+    if (config.jsonMode === "schema" && err instanceof LlmError && err.formatIssue) {
+      console.warn(`[llm] schema mode failed (${err.message}), retrying in object mode`);
+      return attempt({ ...config, jsonMode: "object" }, req, deadline);
+    }
+    throw err;
+  }
+}
+
+async function attempt<T extends z.ZodType>(
+  config: LlmConfig,
+  req: JsonRequest<T>,
+  signal: AbortSignal,
 ): Promise<z.output<T>> {
   // Our zod schemas produce plain JSON Schema: objects closed with
   // additionalProperties:false, optional fields left out of `required`.
@@ -157,11 +222,12 @@ export async function generateJson<T extends z.ZodType>(
 
   let text: string;
   try {
-    const api = await clientFor(config, 120_000);
+    if (signal.aborted) throw new LlmError("timeout", "the AI service took too long to answer");
+    const api = await clientFor(config, req.timeout ?? DEADLINE_MS);
     text =
       api.format === "anthropic"
-        ? await viaAnthropic(api.client, config, req, jsonSchema)
-        : await viaOpenAIChat(api.client, config, req, jsonSchema);
+        ? await viaAnthropic(api.client, config, req, jsonSchema, signal)
+        : await viaOpenAIChat(api.client, config, req, jsonSchema, signal);
   } catch (err) {
     throw classify(err);
   }
@@ -170,34 +236,53 @@ export async function generateJson<T extends z.ZodType>(
   try {
     data = JSON.parse(extractJson(text));
   } catch {
-    throw new LlmError("service", "the model's reply wasn't valid JSON");
+    throw new LlmError("service", "the model's reply wasn't valid JSON", { formatIssue: true });
   }
   const parsed = req.schema.safeParse(dropNulls(data));
   if (!parsed.success) {
-    console.error("[llm] reply didn't match the schema:", parsed.error.issues);
-    throw new LlmError("service", "the model's reply didn't match the expected shape");
+    const issues = parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
+    console.error(`[llm] reply didn't match the schema: ${issues.slice(0, 5).join("; ")}`);
+    throw new LlmError("service", "the model's reply didn't match the expected shape", { formatIssue: true });
   }
   return parsed.data;
 }
+
+/* For vendors that don't take a schema as an output format: ask for it in
+   the prompt. (OpenAI's json_object mode also needs the word "JSON" there.) */
+const withSchema = (system: string, schema: Record<string, unknown>) =>
+  `${system}\n\nReply with only a JSON object that matches this JSON Schema:\n${JSON.stringify(schema)}`;
+
+/* A reply without the answer list: some vendors send an error this way, with
+   a 200 status. */
+const noAnswer = (res: unknown) =>
+  new LlmError("service", "the AI service sent a reply with no answer in it", {
+    detail: vendorText(res),
+    formatIssue: true,
+  });
 
 async function viaAnthropic(
   client: Anthropic,
   config: LlmConfig,
   req: JsonRequest<z.ZodType>,
   schema: Record<string, unknown>,
+  signal: AbortSignal,
 ): Promise<string> {
   const effort = req.reasoning === false ? undefined : config.effort;
+  const object = config.jsonMode === "object";
   const res = await client.messages.create({
     model: config.model,
     max_tokens: req.maxTokens,
     ...(effort && { thinking: { type: "adaptive" } }),
-    system: req.system,
-    output_config: {
-      format: { type: "json_schema", schema },
-      ...(effort && { effort: effort as Anthropic.OutputConfig["effort"] }),
-    },
+    system: object ? withSchema(req.system, schema) : req.system,
+    ...((!object || effort) && {
+      output_config: {
+        ...(!object && { format: { type: "json_schema", schema } }),
+        ...(effort && { effort: effort as Anthropic.OutputConfig["effort"] }),
+      },
+    }),
     messages: [{ role: "user", content: req.user }],
-  });
+  }, { signal });
+  if (!Array.isArray(res.content)) throw noAnswer(res);
   if (res.stop_reason === "refusal") throw new LlmError("service", "the model declined to answer");
   if (res.stop_reason === "max_tokens") throw new LlmError("service", "the model ran out of tokens");
   const block = res.content.find((b): b is Anthropic.TextBlock => b.type === "text");
@@ -210,16 +295,13 @@ async function viaOpenAIChat(
   config: LlmConfig,
   req: JsonRequest<z.ZodType>,
   schema: Record<string, unknown>,
+  signal: AbortSignal,
 ): Promise<string> {
   const official = !config.baseURL;
   const effort = req.reasoning === false ? undefined : config.effort;
 
   // Vendors without json_schema support get the schema in the prompt instead.
-  // json_object mode requires the word "JSON" in the messages; this adds it.
-  const system =
-    config.jsonMode === "object"
-      ? `${req.system}\n\nReply with only a JSON object that matches this JSON Schema:\n${JSON.stringify(schema)}`
-      : req.system;
+  const system = config.jsonMode === "object" ? withSchema(req.system, schema) : req.system;
 
   const res = await client.chat.completions.create({
     model: config.model,
@@ -242,13 +324,47 @@ async function viaOpenAIChat(
       { role: "system", content: system },
       { role: "user", content: req.user },
     ],
-  });
-  const choice = res.choices[0];
-  if (choice?.message.refusal) throw new LlmError("service", "the model declined to answer");
-  if (choice?.finish_reason === "length") throw new LlmError("service", "the model ran out of tokens");
-  const text = choice?.message.content;
+  }, { signal });
+  const choice = (res.choices as OpenAI.ChatCompletion.Choice[] | undefined)?.[0];
+  if (!choice) throw noAnswer(res);
+  if (choice.message?.refusal) throw new LlmError("service", "the model declined to answer");
+  if (choice.finish_reason === "length") throw new LlmError("service", "the model ran out of tokens");
+  const text = choice.message?.content;
   if (!text) throw new LlmError("service", "the model returned no text");
   return text;
+}
+
+/* Which JSON mode this service needs, found with one tiny request when the
+   settings are saved: "schema" if it takes strict-schema output, "object"
+   if only the schema-in-the-prompt fallback works, null if we couldn't tell
+   (slow, out of credit…) — then the settings stay as they are, and the
+   per-request fallback still covers it. */
+export async function probeJsonMode(config: LlmConfig): Promise<"schema" | "object" | null> {
+  const req = {
+    system: "You are a connection test.",
+    user: 'Reply with {"ok": true}.',
+    schema: z.object({ ok: z.boolean() }),
+    maxTokens: 50,
+    reasoning: false,
+    timeout: 20_000,
+  };
+  const deadline = AbortSignal.timeout(req.timeout);
+  try {
+    await attempt({ ...config, jsonMode: "schema" }, req, deadline);
+    return "schema";
+  } catch (err) {
+    if (!(err instanceof LlmError && err.formatIssue)) {
+      console.warn(`[llm] JSON-mode probe couldn't tell: ${err instanceof Error ? err.message : err}`);
+      return null;
+    }
+  }
+  try {
+    await attempt({ ...config, jsonMode: "object" }, req, deadline);
+    return "object";
+  } catch (err) {
+    console.warn(`[llm] JSON-mode probe couldn't tell: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
 }
 
 // ── Listing models (free; used to check a key before saving) ───────────────

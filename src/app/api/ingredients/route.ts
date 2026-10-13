@@ -6,6 +6,8 @@ import { mockAI, mockDelay, mockFailure, mockIngredients } from "@/lib/server/mo
 import type { FreshnessTag, Ingredient } from "@/lib/types";
 
 export const runtime = "nodejs";
+// Above the AI call's own 120 s deadline (lib/server/llm.ts), so ours fires first.
+export const maxDuration = 150;
 
 /* Structured-output schema: the model must return exactly this shape.
    `freshness` is a string enum (JSON-schema-friendly) mapped back to the

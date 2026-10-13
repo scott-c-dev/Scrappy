@@ -8,6 +8,8 @@ import type { Dish, Ingredient, Prefs, Step } from "@/lib/types";
 import { amountText, type UnitSystem } from "@/lib/units";
 
 export const runtime = "nodejs";
+// Above the AI call's own 120 s deadline (lib/server/llm.ts), so ours fires first.
+export const maxDuration = 150;
 
 interface Body {
   ingredients: Ingredient[];
@@ -35,7 +37,9 @@ const DISH_SCHEMA = z.object({
   steps: z.array(
     z.object({
       text: z.string(),
-      needsImage: z.boolean(),
+      // Optional: in plain JSON mode some models (DeepSeek) leave it out
+      // when it's false. A missing one means no picture.
+      needsImage: z.boolean().optional(),
       cap: z.string().optional(),
       imagePrompt: z.string().optional(),
     }),
@@ -214,7 +218,8 @@ export async function POST(req: Request) {
       if (violations.length) dishes = strip(dishes, allowed);
     }
 
-    const mapped = dishes.map(toDish);
+    // Models sometimes over-deliver; never show more than were asked for.
+    const mapped = dishes.slice(0, count).map(toDish);
     return isSwap
       ? NextResponse.json({ dish: mapped[0] })
       : NextResponse.json({ dishes: mapped });

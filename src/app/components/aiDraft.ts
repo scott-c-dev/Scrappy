@@ -27,6 +27,8 @@ export interface Draft {
   models: string[] | null | "loading";
   check: "idle" | "checking" | "ok" | "fail";
   reason: CheckFailure | null;
+  /* The last check found the service needs plain JSON and turned it on. */
+  jsonSwitched: boolean;
 }
 
 export function blankDraft(provider: AiProvider): Draft {
@@ -42,6 +44,7 @@ export function blankDraft(provider: AiProvider): Draft {
     models: null,
     check: "idle",
     reason: null,
+    jsonSwitched: false,
   };
 }
 
@@ -138,6 +141,7 @@ export function useAiDraft(
       ...patch,
       check: prev.check === "checking" ? "checking" : "idle",
       reason: null,
+      jsonSwitched: false,
     }));
 
   // A pasted key picks its service when the prefix says which: sk-ant- is
@@ -179,14 +183,19 @@ export function useAiDraft(
 
   const runCheck = async () => {
     if (d.check === "checking" || !draftValid(d)) return;
-    const settings = toSettings(d);
+    let settings = toSettings(d);
     const my = ++run.current;
-    setD((prev) => ({ ...prev, check: "checking", reason: null }));
+    setD((prev) => ({ ...prev, check: "checking", reason: null, jsonSwitched: false }));
     const res = await checkAi(settings);
     if (my !== run.current) return;
     if (res.ok) {
+      // The service only takes plain JSON: turn it on now, in view, rather
+      // than paying for a failed attempt on every request later. Never the
+      // other way — someone who turned it on had a reason.
+      const switchJson = res.jsonMode === "object" && !settings.jsonMode;
+      if (switchJson) settings = { ...settings, jsonMode: true };
       onSaved(settings);
-      setD((prev) => ({ ...prev, check: "ok" }));
+      setD((prev) => ({ ...prev, check: "ok", ...(switchJson && { jsonMode: true, jsonSwitched: true }) }));
     } else {
       setD((prev) => ({ ...prev, check: "fail", reason: res.reason }));
     }

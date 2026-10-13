@@ -303,6 +303,12 @@ export function AiSetupScreen({ saved, onSave, onRemove, onDone }: AiSetupScreen
             <div className="flex min-w-0 flex-col gap-2">
               <span className="text-14 font-bold text-ink">Connected</span>
               <span className="text-13 [overflow-wrap:anywhere] text-ink-soft">{summary}</span>
+              {d.jsonSwitched && (
+                // Placeholder copy until Claude Design writes this line.
+                <span className="text-13 leading-[1.45] text-pretty text-ink-soft">
+                  This service doesn&apos;t do strict JSON, so I turned on Plain JSON mode.
+                </span>
+              )}
             </div>
           </div>
         )}

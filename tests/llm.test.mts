@@ -11,7 +11,8 @@ import * as check from "../src/app/api/ai/check/route";
 import * as ingredients from "../src/app/api/ingredients/route";
 import * as preference from "../src/app/api/preference/route";
 import * as recipes from "../src/app/api/recipes/route";
-import { llmConfig } from "../src/lib/server/llm";
+import { z } from "zod";
+import { generateJson, llmConfig, type LlmError } from "../src/lib/server/llm";
 import { isPrivateIp } from "../src/lib/server/netguard";
 
 type Fake = Awaited<ReturnType<typeof startFakeLlm>>;
@@ -154,6 +155,74 @@ describe("official OpenAI (defaults)", () => {
   });
 });
 
+describe("vendors without strict-schema output", () => {
+  type Sent = { body: { response_format?: { type: string }; output_config?: { format?: unknown } } };
+  const formats = (from: number): string[] =>
+    (fake.state.requests.slice(from) as Sent[]).map(
+      (r) => r.body.response_format?.type ?? (r.body.output_config?.format ? "json_schema" : "prompt"),
+    );
+
+  for (const mode of ["schema400", "schema422", "schemaIgnored"]) {
+    test(`${mode}: one retry with the schema in the prompt, then it works`, async () => {
+      fake.state.mode = mode;
+      fake.state.reply = ING_REPLY;
+      const from = fake.state.requests.length;
+      const { status, json } = await post(ingredients, { transcript: "cabbage", ai: custom() });
+      assert.equal(status, 200);
+      assert.equal(json.ingredients.length, 2);
+      assert.deepEqual(formats(from), ["json_schema", "json_object"]);
+      assert.match(lastRequest().body.messages[0].content, /JSON Schema/);
+    });
+  }
+
+  test("Claude-style vendor: retried without output_config.format, effort kept", async () => {
+    fake.state.mode = "schema400";
+    fake.state.reply = ING_REPLY;
+    const from = fake.state.requests.length;
+    const ai = custom({ format: "anthropic", baseURL: fake.url, effort: "low" });
+    const { status } = await post(ingredients, { transcript: "cabbage", ai });
+    assert.equal(status, 200);
+    assert.deepEqual(formats(from), ["json_schema", "prompt"]);
+    assert.deepEqual(lastRequest().body.output_config, { effort: "low" });
+    assert.match(lastRequest().body.system, /JSON Schema/);
+  });
+
+  test("object mode chosen in settings: no second request", async () => {
+    fake.state.mode = "badjson";
+    const from = fake.state.requests.length;
+    const { status } = await post(ingredients, { transcript: "cabbage", ai: custom({ jsonMode: true }) });
+    assert.equal(status, 502);
+    assert.equal(fake.state.requests.length - from, 1);
+  });
+
+  test("no object-mode retry for a key, credit or model problem", async () => {
+    // (A 429 is still retried once by the SDK itself, in the same mode.)
+    for (const mode of ["401", "429", "400credit", "404"]) {
+      fake.state.mode = mode;
+      const from = fake.state.requests.length;
+      await post(ingredients, { transcript: "cabbage", ai: custom() });
+      assert.ok(formats(from).every((f) => f === "json_schema"), mode);
+    }
+  });
+
+  test("a 200 with no answer in it: a clean error, not a crash", async () => {
+    fake.state.mode = "noanswer";
+    const errors: string[] = [];
+    const realError = console.error;
+    console.error = (...a: unknown[]) => void errors.push(a.join(" "));
+    try {
+      const { status, json } = await post(ingredients, { transcript: "cabbage", ai: custom() });
+      assert.equal(status, 502);
+      assert.equal(json.kind, "service");
+      assert.equal(json.error, "the AI service sent a reply with no answer in it");
+      assert.doesNotMatch(JSON.stringify(json), /DEGRADED/, "the vendor's words stay out of the reply");
+      assert.match(errors.join("\n"), /vendor said: Function is DEGRADED/, "…and go to the log");
+    } finally {
+      console.error = realError;
+    }
+  });
+});
+
 describe("custom service", () => {
   test("OpenAI-style vendor: max_tokens, strict schema, nulls dropped", async () => {
     fake.state.reply = { dishes: [{ ...DISH, steps: [{ text: "Fry.", needsImage: false, cap: null, imagePrompt: null }] }] };
@@ -171,6 +240,13 @@ describe("custom service", () => {
     const step = format.json_schema.schema.properties.dishes.items.properties.steps.items;
     assert.deepEqual(step.required, ["text", "needsImage", "cap", "imagePrompt"]);
     assert.deepEqual(step.properties.cap, { anyOf: [{ type: "string" }, { type: "null" }] });
+  });
+
+  test("plain JSON mode: a step without needsImage means no picture", async () => {
+    fake.state.reply = { dishes: [{ ...DISH, steps: [{ text: "Shred." }, { text: "Fry.", needsImage: true, cap: "c", imagePrompt: "p" }] }] };
+    const { status, json } = await post(recipes, { ...RECIPE_BODY, ai: custom({ jsonMode: true }) });
+    assert.equal(status, 200);
+    assert.deepEqual(json.dishes[0].steps.map((s: { img: boolean }) => s.img), [false, true]);
   });
 
   test("plain JSON mode + effort; fenced JSON still parses", async () => {
@@ -226,12 +302,12 @@ describe("failures come back with the right kind", () => {
     ["429", "credit"],
     ["400credit", "credit"],
     ["400", "service"],
-    ["404", "service"],
+    ["404", "modelNotFound"],
     ["badjson", "service"],
     ["wrongshape", "service"],
     ["truncated", "service"],
     ["refusal", "service"],
-    ["redirect", "service"],
+    ["redirect", "unreachable"],
   ];
   for (const [provider, make] of [["claude", claude], ["custom", custom]] as const) {
     for (const [mode, kind] of cases) {
@@ -282,13 +358,65 @@ describe("check before saving (free: model list only)", () => {
 
   test("a service without a model list → ok, unchecked", async () => {
     fake.state.mode = "models404";
+    fake.state.reply = { ok: true };
     const { json } = await post(check, { ai: custom() });
-    assert.deepEqual(json, { ok: true, models: null });
+    assert.deepEqual(json, { ok: true, models: null, jsonMode: "schema" });
+  });
+
+  test("custom service: one tiny request finds which JSON mode it needs", async () => {
+    fake.state.reply = { ok: true };
+    let from = fake.state.requests.length;
+    assert.equal((await post(check, { ai: custom() })).json.jsonMode, "schema");
+    const probe = fake.state.requests.at(-1)!.body;
+    assert.equal(probe.max_tokens, 50, "a tiny request");
+    assert.equal(fake.state.requests.length - from, 2, "model list + one probe");
+
+    fake.state.mode = "schema400";
+    from = fake.state.requests.length;
+    assert.equal((await post(check, { ai: custom() })).json.jsonMode, "object");
+    assert.equal(fake.state.requests.length - from, 3, "model list + strict probe + plain probe");
+  });
+
+  test("a probe that can't tell never fails the check", async () => {
+    fake.state.mode = "truncated";
+    const { json } = await post(check, { ai: custom() });
+    assert.deepEqual(json, { ok: true, models: ["claude-sonnet-5-5", "gpt-6-luna", "vendor-model"] });
+  });
+
+  test("the picker's list-only call never probes", async () => {
+    const from = fake.state.requests.length;
+    await post(check, { ai: custom(), listOnly: true });
+    assert.equal(fake.state.requests.length - from, 1);
   });
 
   test("custom picker lists models before one is chosen", async () => {
     const { json } = await post(check, { ai: custom({ model: null }), listOnly: true });
     assert.equal(json.ok, true);
+  });
+});
+
+describe("timeouts", () => {
+  const slowCall = (format: "openai-chat" | "anthropic", timeout: number) => {
+    const config = llmConfig(custom({ format, baseURL: format === "anthropic" ? fake.url : `${fake.url}/v1` }));
+    return generateJson(config, { system: "s", user: "u", schema: z.object({ ok: z.boolean() }), maxTokens: 10, timeout });
+  };
+
+  test("no answer in time is its own kind, not 'can't reach'", async () => {
+    fake.state.mode = "slow";
+    for (const format of ["openai-chat", "anthropic"] as const) {
+      await assert.rejects(slowCall(format, 100), (e: LlmError) => e.kind === "timeout", format);
+    }
+  });
+
+  test("one deadline for the whole call: a timed-out request is never retried", async () => {
+    fake.state.mode = "slow";
+    for (const format of ["openai-chat", "anthropic"] as const) {
+      const from = fake.state.requests.length;
+      const started = Date.now();
+      await assert.rejects(slowCall(format, 300), (e: LlmError) => e.kind === "timeout", format);
+      assert.equal(fake.state.requests.length - from, 1, `${format}: sent once`);
+      assert.ok(Date.now() - started < 1500, `${format}: stopped at the deadline`);
+    }
   });
 });
 

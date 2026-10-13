@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
 import { modelOf, type AiSettings, type CheckFailure } from "@/lib/ai";
-import { chatModels, listModels, llmConfig, LlmError, type LlmFailureKind } from "@/lib/server/llm";
+import { chatModels, listModels, llmConfig, LlmError, probeJsonMode, type LlmFailureKind } from "@/lib/server/llm";
 import { mockAI, mockCheck, mockDelay } from "@/lib/server/mock";
 import { assertPublicUrl } from "@/lib/server/netguard";
 
 export const runtime = "nodejs";
+// Above the AI call's own 120 s deadline (lib/server/llm.ts), so ours fires first.
+export const maxDuration = 150;
 
 /* Checks AI settings before they're saved, and lists the models the key can
-   use for the model picker. Uses only the (free) model list, so it costs
-   nothing; running out of credit shows up at first use instead.
+   use for the model picker. The check itself uses only the (free) model list;
+   running out of credit shows up at first use instead. For a custom service
+   it also sends one tiny request to learn which JSON mode it needs — that
+   answer never fails the check.
 
-   → { ok: true, models: string[] | null }   null = the service has no list
+   → { ok: true, models: string[] | null, jsonMode?: "schema" | "object" }
+       models null = the service has no list; no jsonMode = couldn't tell
    → { ok: false, reason: CheckFailure } */
 
 const REASON: Record<LlmFailureKind, CheckFailure> = {
@@ -18,6 +23,7 @@ const REASON: Record<LlmFailureKind, CheckFailure> = {
   credit: "wrongKey",
   modelNotFound: "modelNotFound",
   unreachable: "unreachable",
+  timeout: "unreachable",
   privateAddress: "privateAddress",
   service: "unreachable",
 };
@@ -53,7 +59,13 @@ export async function POST(req: Request) {
     if (!body.listOnly && all && model && !all.includes(model)) {
       return NextResponse.json({ ok: false, reason: "modelNotFound" });
     }
-    return NextResponse.json({ ok: true, models: all && chatModels(all) });
+    const jsonMode =
+      !body.listOnly && ai?.provider === "custom" ? await probeJsonMode(config) : null;
+    return NextResponse.json({
+      ok: true,
+      models: all && chatModels(all),
+      ...(jsonMode && { jsonMode }),
+    });
   } catch (err) {
     const kind = err instanceof LlmError ? err.kind : "service";
     return NextResponse.json({ ok: false, reason: REASON[kind] });

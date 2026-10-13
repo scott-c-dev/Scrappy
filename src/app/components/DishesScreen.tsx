@@ -37,13 +37,18 @@ export function DishesScreen({
     );
   }
 
+  const n = dishes.length;
   const topClaim = goingBad.length
-    ? "These lean on your " +
+    ? (n === 1 ? "This leans" : "These lean") +
+      " on your " +
       goingBad.join(" & ").toLowerCase() +
       " first — the stuff on the clock."
-    : "Three quick things from what you’ve got.";
+    : n === 1
+      ? "One quick thing from what you’ve got."
+      : capitalize(numberWord(n)) + " quick things from what you’ve got.";
   const rescueLine =
-    "That’s " + rescueCount + " things saved from the bin today. Not bad.";
+    "That’s " + rescueCount + (rescueCount === 1 ? " thing" : " things") +
+    " saved from the bin today. Not bad.";
 
   return (
     <>
@@ -52,7 +57,9 @@ export function DishesScreen({
           <span className="mt-4 size-9 flex-none rounded-full bg-fresh" />
           <div className="text-14 leading-[1.35] font-bold text-ink">{topClaim}</div>
         </div>
-        <span className="label-caps text-muted">3 dishes · no extra shopping</span>
+        <span className="label-caps text-muted">
+          {n} {n === 1 ? "dish" : "dishes"} · no extra shopping
+        </span>
         {dishes.map((d) => (
           <div
             key={d.id}
@@ -111,4 +118,14 @@ export function DishesScreen({
       </StickyBar>
     </>
   );
+}
+
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+
+function numberWord(n: number): string {
+  return NUMBER_WORDS[n] ?? String(n);
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

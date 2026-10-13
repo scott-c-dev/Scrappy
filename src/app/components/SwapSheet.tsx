@@ -2,7 +2,8 @@ import { Mic } from "./Mic";
 import { PrimaryButton, Sheet, TextButton } from "./ui";
 
 interface SwapSheetProps {
-  dishName: string;
+  /* Names the dish and what the next one will lean on (dishCopy.swapLine). */
+  line: string;
   onSwap: () => void;
   onVoice: () => void;
   onType: () => void;
@@ -11,13 +12,13 @@ interface SwapSheetProps {
 
 /* Asked before a swap, since swapping discards the dish: a plain swap, or one
    steered by voice or text. */
-export function SwapSheet({ dishName, onSwap, onVoice, onType, onClose }: SwapSheetProps) {
+export function SwapSheet({ line, onSwap, onVoice, onType, onClose }: SwapSheetProps) {
   return (
     <Sheet onClose={onClose} className="gap-16 px-22 pt-22 pb-26">
       <div>
         <div className="font-display text-22 font-extrabold text-ink">Swap this dish?</div>
         <div className="mt-4 text-14 text-ink-soft">
-          {dishName} — I&apos;ll still use up what&apos;s on the clock.
+          {line}
         </div>
       </div>
       <PrimaryButton

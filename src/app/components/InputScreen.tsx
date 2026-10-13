@@ -35,7 +35,7 @@ export function InputScreen({ keyState, onVoice, onType, onSetup }: InputScreenP
         <div className="text-center">
           <div className="font-body text-15 font-bold text-ink">Tap and tell me</div>
           <div className="mt-3 text-13 text-muted">
-            e.g. “half a cabbage that&apos;s wilting, three eggs, leftover rice”
+            e.g. “three eggs, leftover rice, a cabbage from last week”
           </div>
           {keyState === "none" ? (
             <div className="mt-7 flex flex-wrap items-center justify-center gap-6 text-13 leading-[1.4] text-ink-soft">
@@ -64,8 +64,8 @@ export function InputScreen({ keyState, onVoice, onType, onSetup }: InputScreenP
                 keyState === "loading" && "invisible",
               )}
             >
-              Mention anything that needs using up — I&apos;ll bump it to the
-              front.
+              Just list it. If something&apos;s wilting, say so and I&apos;ll cook it
+              first.
             </div>
           )}
         </div>

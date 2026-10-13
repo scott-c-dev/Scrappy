@@ -46,7 +46,7 @@ const ING_REPLY = {
 };
 const DISH = {
   name: "Cabbage Egg Stir-fry", short: "Stir-fry", blurb: "Quick.",
-  rescue: ["Cabbage"], uses: ["Cabbage", "Eggs"],
+  fridge: ["i1", "i2"], pantry: ["oil"],
   steps: [
     { text: "Shred the cabbage.", needsImage: true, cap: "reference · shredding", imagePrompt: "a knife shredding cabbage" },
     { text: "Fry.", needsImage: false },
@@ -220,6 +220,61 @@ describe("vendors without strict-schema output", () => {
     } finally {
       console.error = realError;
     }
+  });
+});
+
+describe("recipes name the user's ingredients by ref", () => {
+  const dish = (over: object) => ({ dishes: [{ ...DISH, ...over }] });
+  const prompt = () => lastRequest().body.messages.map((m: { content: string }) => m.content).join("\n");
+
+  test("the prompt numbers the list; the schema only allows those refs and the staples", async () => {
+    fake.state.reply = dish({});
+    await post(recipes, { ...RECIPE_BODY, ai: custom() });
+    assert.match(prompt(), /- \[i1\] Cabbage .*GOING BAD/);
+    assert.match(prompt(), /- \[i2\] Eggs /);
+    const props = lastRequest().body.response_format.json_schema.schema.properties.dishes.items.properties;
+    assert.deepEqual(props.fridge.items.enum, ["i1", "i2"]);
+    assert.ok(props.pantry.items.enum.includes("soy sauce"));
+  });
+
+  test("refs come back as the user's ingredient ids; staples stay lower-case", async () => {
+    fake.state.reply = dish({ fridge: ["i2", "i1", "i1"], pantry: ["Salt", "oil"] });
+    const { json } = await post(recipes, { ...RECIPE_BODY, ai: custom() });
+    assert.deepEqual(json.dishes[0].uses, ["b", "a"]);
+    assert.deepEqual(json.dishes[0].pantry, ["salt", "oil"]);
+    assert.equal(json.dishes[0].rescue, undefined);
+  });
+
+  test("a staple the user listed counts as their item, not pantry", async () => {
+    fake.state.reply = dish({ fridge: ["i1"], pantry: ["scallions", "salt"] });
+    const body = { ...RECIPE_BODY, ingredients: [...RECIPE_BODY.ingredients, { id: "c", name: "Scallions", amount: null, unit: "pcs", tag: null }] };
+    const { json } = await post(recipes, { ...body, ai: custom() });
+    assert.deepEqual(json.dishes[0].uses, ["a", "c"]);
+    assert.deepEqual(json.dishes[0].pantry, ["salt"]);
+  });
+
+  test("an unknown ref or ingredient: one re-prompt, then it's dropped", async () => {
+    fake.state.reply = dish({ fridge: ["i1", "i9"], pantry: ["bacon", "salt"] });
+    const before = fake.state.requests.length;
+    const { status, json } = await post(recipes, { ...RECIPE_BODY, ai: custom({ jsonMode: true }) });
+    assert.equal(status, 200);
+    assert.equal(fake.state.requests.length - before, 2, "re-prompted once");
+    assert.match(prompt(), /NOT in my list or the whitelist: i9, bacon/);
+    assert.deepEqual(json.dishes[0].uses, ["a"]);
+    assert.deepEqual(json.dishes[0].pantry, ["salt"]);
+  });
+
+  test("never more dishes than asked for", async () => {
+    fake.state.reply = { dishes: [DISH, { ...DISH, name: "Two" }, { ...DISH, name: "Three" }] };
+    const { json } = await post(recipes, { ...RECIPE_BODY, prefs: { ...RECIPE_BODY.prefs, courses: 2 }, ai: custom() });
+    assert.equal(json.dishes.length, 2);
+  });
+
+  test("a swap keeps the old dish's on-the-clock items, by name in the prompt", async () => {
+    fake.state.reply = dish({});
+    const { json } = await post(recipes, { ...RECIPE_BODY, swapDishId: "x", keep: ["a"], exclude: ["Old"], ai: custom() });
+    assert.equal(json.dish.name, DISH.name);
+    assert.match(prompt(), /MUST still use up these expiring ingredients: Cabbage\./);
   });
 });
 

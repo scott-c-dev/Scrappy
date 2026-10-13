@@ -178,6 +178,10 @@ interface JsonRequest<T extends z.ZodType> {
   system: string;
   user: string;
   schema: T;
+  /* What the model is told to produce, when that's stricter than what we
+     accept: e.g. an enum the vendor enforces, while a vendor that only takes
+     the schema as a hint can still slip, and the caller cleans that up. */
+  wireSchema?: z.ZodType;
   maxTokens: number;
   /* false for trivial calls where thinking only adds latency. */
   reasoning?: boolean;
@@ -217,7 +221,7 @@ async function attempt<T extends z.ZodType>(
 ): Promise<z.output<T>> {
   // Our zod schemas produce plain JSON Schema: objects closed with
   // additionalProperties:false, optional fields left out of `required`.
-  const jsonSchema = z.toJSONSchema(req.schema) as Record<string, unknown>;
+  const jsonSchema = z.toJSONSchema(req.wireSchema ?? req.schema) as Record<string, unknown>;
   delete jsonSchema.$schema;
 
   let text: string;

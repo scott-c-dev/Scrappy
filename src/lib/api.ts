@@ -89,7 +89,8 @@ export function swapDish(input: {
   prefs: Prefs;
   units: UnitSystem;
   swapDishId: string;
-  keepRescue: string[];
+  /* Ids of the old dish's on-the-clock ingredients the new one should keep. */
+  keep: string[];
   exclude: string[];
   note?: string;
 }): Promise<{ dish: Dish }> {

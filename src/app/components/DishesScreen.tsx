@@ -44,7 +44,7 @@ export function DishesScreen({
   return (
     <>
       <div className="flex animate-risein flex-col gap-13 px-18 pt-10 pb-8">
-        <div className="flex items-start gap-11 rounded-tile bg-fresh-bg px-14 py-13">
+        <div className={cx("flex items-start gap-11 rounded-tile px-14 py-13", urgent ? "bg-rescue-bg" : "bg-fresh-bg")}>
           <span className={cx("mt-4 size-9 flex-none rounded-full", dot)} />
           <div className="text-14 leading-[1.35] font-bold text-ink">
             {topClaim(dishes, ingredients)}

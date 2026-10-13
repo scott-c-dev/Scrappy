@@ -99,6 +99,18 @@ export class FileOAuthProvider implements OAuthClientProvider {
     return v;
   }
 
+  /* Called by the SDK when the server rejects what we saved (e.g. a refresh
+     token it no longer recognizes). Dropping it lets the SDK start a fresh
+     login instead of retrying the same dead token forever. */
+  invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void {
+    const store = read();
+    if (scope === "all" || scope === "tokens") delete store.tokens;
+    if (scope === "all" || scope === "client") delete store.clientInformation;
+    if (scope === "all" || scope === "verifier") delete store.codeVerifier;
+    mkdirSync(dirname(STORE_PATH), { recursive: true });
+    writeFileSync(STORE_PATH, JSON.stringify(store, null, 2));
+  }
+
   redirectToAuthorization(authorizationUrl: URL): void {
     this.onRedirect(authorizationUrl);
   }

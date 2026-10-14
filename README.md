@@ -34,8 +34,10 @@ It's a mobile-first PWA.
   progress** (knife/pan technique), generated via Midjourney, plus a finale plated
   shot. Images stream in behind shimmer placeholders and degrade gracefully.
 - **Clear failure states** — no mic access, offline, a noisy room, no food
-  heard, an AI account out of credit or a refused key each get their own
-  message and a way forward (retry, type, resend).
+  heard, and each way an AI service can fail (out of credit, too busy, key
+  refused, model gone, not answering, too slow) get their own message and a
+  way forward (retry, type, resend, fewer dishes, fix it in AI settings) —
+  the same wherever they happen.
 - **Installable PWA** — manifest, icons, service worker, mobile-portrait layout.
 
 ## Why voice, not photos?
@@ -144,16 +146,25 @@ good default.
 - **Where it lives:** on the device (or only until the tab closes, if
   "Remember on this device" is off). It's sent with each AI request, through
   the server to the service; the server never stores or logs it.
-- **Checked before saving, for free:** the check only lists the key's models,
-  so it catches a wrong key, an unreachable address or a model the key can't
-  use. Running out of credit shows up at first use, with its own message.
+- **Checked before saving:** listing the key's models (free) catches a wrong
+  key, an unreachable address or a model the key can't use. For a custom
+  service, one tiny request also finds whether it takes
+  Structured Outputs; if not, JSON mode is switched on and the screen says so.
+  Running out of credit shows up at first use, with its own message.
 - **Models:** Claude uses `claude-sonnet-5-5` and OpenAI `gpt-6-luna` (reasoning
   `low`) unless you pick another. The default is saved as "Scrappy's default",
   so a newer default in the code reaches everyone who never picked a model.
 - **Other services (Custom):** any Claude-style or OpenAI-style (Chat
   Completions) API — DeepSeek, Groq, OpenRouter, vLLM… — with its address, key
-  and model, plus optional reasoning effort and a plain-JSON mode for services
-  without JSON-schema support. Every reply is checked against the schema.
+  and model. Under **Advanced**: reasoning effort, and JSON mode for services
+  without Structured Outputs (set for you when you save; a request rejected
+  in Structured Outputs mode is also retried once in JSON mode). Every reply
+  is checked against the schema.
+- **When a request fails,** the message says whose side it's on and what
+  helps: try again, wait a minute (too busy), fewer dishes or a faster model
+  (no answer within 2 minutes), or "Open AI settings" (key refused, model gone,
+  a custom address not answering) — then back where you were, with what you
+  said kept. Settings shows the last such failure until a request works.
 - **Private addresses are refused.** Requests go through the server, so an
   address like `http://192.168.1.20:11434` would reach the *server's* network,
   not the user's. Set `ALLOW_PRIVATE_LLM_URLS=1` only when you run Scrappy on
@@ -227,10 +238,19 @@ work on the UI, or try the whole flow, without credit.
 | Key check: model not found | A key containing `nomodel` |
 | Key check: can't reach | A key containing `down` |
 | Key check: private address | Custom, with an address like `http://192.168.1.20:11434/v1` |
+| Key check: "switched on JSON mode" | Custom, with a key containing `jsononly` |
 | Key switched by its prefix | Paste a key starting `sk-proj-` (OpenAI) or `sk-ant-` (Claude) |
-| "Out of credit" | Say or type "out of credit" as your list, or as a preference |
-| "Key refused" | Say or type "key refused" |
-| "My kitchen brain is out" (any other failure) | Say or type "server error" |
+| "Out of credit" | Say or type "out of credit" as your list, as a preference, or as a swap's "what should change" |
+| "Your AI's swamped" | Say or type "too busy" (same places) |
+| "Your AI key was refused" | Say or type "key refused" |
+| "Model not found" | Say or type "no such model" |
+| "Can't reach …" | Say or type "can't reach" |
+| "That took too long" | Say or type "too slow" |
+| "That didn't come back right" (any other failure) | Say or type "server error" |
+| Recipe generation failing | Start with `MOCK_FAIL_RECIPES=<kind>` (e.g. `busy`, `credit`, `timeout`) |
+| "Still cooking up ideas…" (after 30 s) | Start with `MOCK_FAIL_RECIPES=slow` (dishes come after 35 s) |
+| "Last request failed" in Settings | Any of credit, key refused, model not found, then open Settings |
+| "Picture didn't load" | Real only: a step picture that fails to generate |
 | "Heard you — but no food?" | Say or type something with no food in it |
 | "You're offline" | Turn the network off (e.g. DevTools → Network → Offline) |
 | "I can't hear you" / "one more time?" | Real browser states: block the mic, or stop without speaking |

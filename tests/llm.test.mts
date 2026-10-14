@@ -99,7 +99,7 @@ describe("official Claude (defaults)", () => {
     assert.equal(req.path, "/v1/messages");
     assert.equal(req.headers["x-api-key"], "sk-ant-test");
     assert.equal(req.body.model, "claude-sonnet-5-5", "no model saved = Scrappy's default");
-    assert.equal(req.body.max_tokens, 2000);
+    assert.equal(req.body.max_tokens, 6000);
     assert.equal(req.body.thinking, undefined);
     assert.equal(req.body.output_config.effort, undefined);
     assert.deepEqual(req.body.output_config.format.schema, {

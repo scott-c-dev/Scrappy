@@ -245,6 +245,7 @@ async function attempt<T extends z.ZodType>(
   try {
     data = JSON.parse(extractJson(text));
   } catch {
+    console.error(`[llm] reply wasn't valid JSON (${text.length} chars): ${text.slice(0, 200)}…${text.slice(-120)}`);
     throw new LlmError("service", "the model's reply wasn't valid JSON", { formatIssue: true });
   }
   const parsed = req.schema.safeParse(dropNulls(data));

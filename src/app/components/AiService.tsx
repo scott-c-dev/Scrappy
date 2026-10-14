@@ -4,9 +4,9 @@
    - AiSetupScreen: Settings → AI service, one layout for everyone: service,
      key, model, remember, and Custom services. */
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { cx } from "@/lib/cx";
-import { KEY_HELP_URL, PROVIDER_LABEL, type AiEffort, type AiSettings } from "@/lib/ai";
+import { KEY_HELP_URL, PROVIDER_LABEL, type AiEffort, type AiSettings, type CheckFailure } from "@/lib/ai";
 import { blankDraft, draftFromAi, failCopy, serviceName, useAiDraft } from "./aiDraft";
 import {
   Chip,
@@ -66,6 +66,10 @@ interface AiSetupScreenProps {
   onRemove: () => void;
   /* Back to where it was opened from; `connected` after a successful save. */
   onDone: (connected: boolean) => void;
+  /* Opened from a failed request: show what's wrong, as a failed check would. */
+  fix?: CheckFailure | null;
+  /* Opened to change the model (it's gone, or too slow): bring it into view. */
+  focusModel?: boolean;
 }
 
 const EFFORTS: [AiEffort | null, string][] = [
@@ -75,9 +79,16 @@ const EFFORTS: [AiEffort | null, string][] = [
   ["high", "High"],
 ];
 
-export function AiSetupScreen({ saved, onSave, onRemove, onDone }: AiSetupScreenProps) {
+export function AiSetupScreen({ saved, onSave, onRemove, onDone, fix, focusModel }: AiSetupScreenProps) {
+  const start = saved ? draftFromAi(saved) : blankDraft("claude");
   const { d, update, setKey, setProvider, runCheck, saveAnyway, valid, listable, modelIsDefault } =
-    useAiDraft(saved ? draftFromAi(saved) : blankDraft("claude"), { saved, onSaved: onSave });
+    useAiDraft(fix ? { ...start, check: "fail", reason: fix } : start, { saved, onSaved: onSave });
+  // Reasoning effort and JSON mode: experts only, so folded away by default.
+  const [advOpen, setAdvOpen] = useState(false);
+  const modelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusModel) modelRef.current?.scrollIntoView({ block: "center" });
+  }, [focusModel]);
 
   const custom = d.provider === "custom";
   const name = serviceName(d);
@@ -164,7 +175,7 @@ export function AiSetupScreen({ saved, onSave, onRemove, onDone }: AiSetupScreen
           </Section>
         )}
 
-        <Section label="Model">
+        <Section label="Model" sectionRef={modelRef}>
           <Card className="gap-12 px-16 py-14">
             {d.models === "loading" && (
               <div className="flex items-center gap-10">
@@ -235,32 +246,53 @@ export function AiSetupScreen({ saved, onSave, onRemove, onDone }: AiSetupScreen
         </Section>
 
         {custom && (
-          <Section label="Optional">
-            <Card className="overflow-hidden">
-              <Row>
-                <RowTitle title="Reasoning effort" caption="Only for models that support it" />
-                <div className="flex flex-wrap gap-7">
-                  {EFFORTS.map(([value, label]) => (
-                    <Chip key={label} on={d.effort === value} onClick={() => update({ effort: value })} className="px-13 py-8 text-13">
-                      {label}
-                    </Chip>
-                  ))}
-                </div>
-              </Row>
-              <Row divided>
-                <RowTitle title="Plain JSON mode" caption="Turn on if the service rejects structured output" />
-                <Segmented
-                  label="Plain JSON mode"
-                  options={[
-                    [false, "Off"],
-                    [true, "On"],
-                  ]}
-                  value={d.jsonMode}
-                  onPick={(jsonMode) => update({ jsonMode })}
-                />
-              </Row>
-            </Card>
-          </Section>
+          <div className="flex flex-col gap-8">
+            <button
+              onClick={() => setAdvOpen((o) => !o)}
+              aria-expanded={advOpen}
+              className="flex cursor-pointer items-center justify-between gap-12 border-none bg-transparent px-4 py-0 text-left font-body"
+            >
+              <span className="flex min-w-0 flex-col gap-2">
+                <span className="label-caps text-muted">Advanced</span>
+                <span className="text-12 leading-[1.4] text-muted">
+                  Reasoning: {EFFORTS.find(([v]) => v === d.effort)?.[1]} · JSON mode: {d.jsonMode ? "On" : "Off"}
+                </span>
+              </span>
+              <span className="flex-none text-13 font-semibold text-ink-soft underline underline-offset-3">
+                {advOpen ? "Hide" : "Show"}
+              </span>
+            </button>
+            {advOpen && (
+              <Card className="overflow-hidden">
+                <Row>
+                  <RowTitle title="Reasoning effort" caption="Only for models that support it" />
+                  <div className="flex flex-wrap gap-7">
+                    {EFFORTS.map(([value, label]) => (
+                      <Chip key={label} on={d.effort === value} onClick={() => update({ effort: value })} className="px-13 py-8 text-13">
+                        {label}
+                      </Chip>
+                    ))}
+                  </div>
+                </Row>
+                <Row divided>
+                  {/* The vendors' own terms, so they can be looked up. */}
+                  <RowTitle
+                    title="JSON mode"
+                    caption="For services without Structured Outputs — set for you when you save"
+                  />
+                  <Segmented
+                    label="JSON mode"
+                    options={[
+                      [false, "Off"],
+                      [true, "On"],
+                    ]}
+                    value={d.jsonMode}
+                    onPick={(jsonMode) => update({ jsonMode })}
+                  />
+                </Row>
+              </Card>
+            )}
+          </div>
         )}
 
         {saved && d.check !== "checking" && (
@@ -304,9 +336,8 @@ export function AiSetupScreen({ saved, onSave, onRemove, onDone }: AiSetupScreen
               <span className="text-14 font-bold text-ink">Connected</span>
               <span className="text-13 [overflow-wrap:anywhere] text-ink-soft">{summary}</span>
               {d.jsonSwitched && (
-                // Placeholder copy until Claude Design writes this line.
                 <span className="text-13 leading-[1.45] text-pretty text-ink-soft">
-                  This service doesn&apos;t do strict JSON, so I turned on Plain JSON mode.
+                  This service doesn&apos;t support Structured Outputs, so I switched on JSON mode.
                 </span>
               )}
             </div>
@@ -350,9 +381,17 @@ function KeyHelpLink({ provider }: { provider: "claude" | "openai" }) {
   );
 }
 
-function Section({ label, children }: { label: string; children: ReactNode }) {
+function Section({
+  label,
+  sectionRef,
+  children,
+}: {
+  label: string;
+  sectionRef?: Ref<HTMLDivElement>;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex flex-col gap-8">
+    <div ref={sectionRef} className="flex flex-col gap-8">
       <span className="label-caps px-4 text-muted">{label}</span>
       {children}
     </div>

@@ -208,6 +208,12 @@ export function mockIngredients(transcript: string): Ingredient[] {
 
 // ── Preferences ──────────────────────────────────────────────────────────────
 
+// A diet or allergy not in the list, kept in the person's words.
+const ownWords = (s: string) => {
+  const t = s.trim().slice(0, 60);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
 export function mockPref(key: keyof Prefs, transcript: string): string | number {
   const t = transcript.toLowerCase();
   if (key === "servings" || key === "courses") {
@@ -221,13 +227,15 @@ export function mockPref(key: keyof Prefs, transcript: string): string | number 
     if (/veg/.test(t)) return "Vegetarian";
     if (/oil|light|lean/.test(t)) return "Low-oil";
     if (/protein|gym|muscle/.test(t)) return "High-protein";
-    return "No restrictions";
+    if (/^(none|nothing|no restrictions?|anything)$/.test(t.trim())) return "No restrictions";
+    return ownWords(transcript);
   }
   if (/peanut|nut/.test(t)) return "Peanuts";
   if (/shellfish|shrimp|prawn|crab/.test(t)) return "Shellfish";
   if (/gluten|wheat/.test(t)) return "Gluten";
   if (/dairy|milk|lactose/.test(t)) return "Dairy";
-  return "None";
+  if (/^(none|nothing|no allergies)$/.test(t.trim())) return "None";
+  return ownWords(transcript);
 }
 
 // ── Recipes ──────────────────────────────────────────────────────────────────

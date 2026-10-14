@@ -39,12 +39,17 @@ export async function POST(req: Request) {
   }
 
   const choices = OPTIONS[key].map(String) as [string, ...string[]];
+  // Diet and allergies also take the person's own words ("pescatarian",
+  // "sesame"): an allergy forced into the nearest preset is a safety problem.
+  const open = key === "diet" || key === "allergy";
 
   try {
     const { value: raw } = await generateJson(llmConfig(body.ai), {
-      system: `Map the user's short spoken phrase to exactly one of these allowed ${key} options: ${choices.join(", ")}. Choose the closest match.`,
+      system: open
+        ? `Turn the user's short phrase into their ${key === "diet" ? "diet" : "allergies to avoid"}. If it means one of these options, reply with that option exactly: ${choices.join(", ")}. Otherwise reply with their own words as a short phrase in sentence case (e.g. "Pescatarian", "Sesame & peanuts") — never drop something they want avoided.`
+        : `Map the user's short spoken phrase to exactly one of these allowed ${key} options: ${choices.join(", ")}. Choose the closest match.`,
       user: `They said: "${transcript}"`,
-      schema: z.object({ value: z.enum(choices) }),
+      schema: z.object({ value: open ? z.string().min(1).max(60) : z.enum(choices) }),
       // Room for models that think before answering (deepseek-flash ran out
       // at 500 on "no nuts or shellfish please"). Only what's used is billed.
       maxTokens: 2000,

@@ -278,6 +278,21 @@ describe("recipes name the user's ingredients by ref", () => {
   });
 });
 
+describe("preferences", () => {
+  test("diet and allergies keep the person's own words; numbers stay on the list", async () => {
+    fake.state.reply = { value: "Sesame" };
+    const { status, json } = await post(preference, { key: "allergy", transcript: "sesame", ai: custom() });
+    assert.equal(status, 200);
+    assert.equal(json.value, "Sesame");
+    const allergy = lastRequest().body.response_format.json_schema.schema.properties.value;
+    assert.equal(allergy.type, "string");
+    assert.equal(allergy.enum, undefined, "not limited to the presets");
+    fake.state.reply = { value: "4" };
+    await post(preference, { key: "servings", transcript: "four of us", ai: custom() });
+    assert.deepEqual(lastRequest().body.response_format.json_schema.schema.properties.value.enum, ["1", "2", "3", "4", "5", "6"]);
+  });
+});
+
 describe("custom service", () => {
   test("OpenAI-style vendor: max_tokens, strict schema, nulls dropped", async () => {
     fake.state.reply = { dishes: [{ ...DISH, steps: [{ text: "Fry.", needsImage: false, cap: null, imagePrompt: null }] }] };

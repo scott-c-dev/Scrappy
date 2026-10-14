@@ -9,13 +9,12 @@ import { CookScreen } from "./components/CookScreen";
 import { VoiceSheet } from "./components/VoiceSheet";
 import { PrefSheet } from "./components/PrefSheet";
 import { FinishSheet } from "./components/FinishSheet";
-import { ErrorToast } from "./components/ErrorToast";
 import { SwapSheet } from "./components/SwapSheet";
 import { AdjustSheet } from "./components/AdjustSheet";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { AiKeyCard, AiSetupScreen } from "./components/AiService";
 import { finishLine, swapLine } from "./components/dishCopy";
-import { voiceErrorView } from "./voiceErrors";
+import { aiNames, errorView, headsUpText, needsSettings, swapErrorLine } from "./errors";
 
 export default function Scrappy() {
   const {
@@ -36,6 +35,10 @@ export default function Scrappy() {
     pickPref,
     closePref,
     generate,
+    genErrorAction,
+    swapErrorAction,
+    typeIn,
+    retryPic,
     openSwap,
     closeSwap,
     swapNow,
@@ -72,10 +75,24 @@ export default function Scrappy() {
         ? "connected"
         : "ready";
   const showBack = s.screen !== "input";
+  const names = aiNames(ai);
   const voiceError =
     s.voiceError && s.voiceContext
-      ? voiceErrorView(s.voiceError, s.voiceContext, s.errorKeptText, s.backOnline)
+      ? errorView(
+          s.voiceError,
+          s.voiceContext,
+          { keptText: s.errorKeptText, backOnline: s.backOnline, courses: s.prefs.courses },
+          names,
+        )
       : null;
+  const genError = s.genError
+    ? errorView(s.genError, "gen", { keptText: true, backOnline: s.backOnline, courses: s.prefs.courses }, names)
+    : null;
+  const swapError = s.swapError && {
+    id: s.swapError.id,
+    line: swapErrorLine(s.swapError.kind, names),
+    button: needsSettings(s.swapError.kind, names) ? "AI settings" : "Try again",
+  };
   const swapSheetDish = s.dishes.find((d) => d.id === s.swapSheetId);
   const adjusting = s.ingredients.find((i) => i.id === s.adjustId);
 
@@ -135,6 +152,7 @@ export default function Scrappy() {
             <SettingsScreen
               ai={ai ?? null}
               onAiService={() => openAiSetup("settings")}
+              headsUp={s.lastFail && headsUpText(s.lastFail, names)}
               units={s.units}
               onUnits={setUnits}
               images={s.caps.images}
@@ -148,6 +166,8 @@ export default function Scrappy() {
               onSave={saveAi}
               onRemove={removeAi}
               onDone={closeAiSetup}
+              fix={s.setupFix?.reason}
+              focusModel={s.setupFix?.model}
             />
           )}
           {s.screen === "confirm" && (
@@ -155,6 +175,7 @@ export default function Scrappy() {
               ingredients={s.ingredients}
               prefs={s.prefs}
               onAddVoice={() => startVoice("add")}
+              onAddType={() => typeIn("add")}
               onRemove={removeIng}
               onAdjust={openAdjust}
               onOpenPref={openPref}
@@ -164,10 +185,16 @@ export default function Scrappy() {
           {s.screen === "dishes" && (
             <DishesScreen
               loading={s.dishesLoading}
+              slow={s.genSlow}
+              error={genError}
               dishes={s.dishes}
               replacingId={s.replacingId}
+              swapSlow={s.swapSlow}
+              swapError={swapError}
               ingredients={s.ingredients}
               onSwap={openSwap}
+              onSwapError={swapErrorAction}
+              onErrorAction={genErrorAction}
               onStartCook={startCook}
             />
           )}
@@ -182,6 +209,7 @@ export default function Scrappy() {
               onSetDish={setCookDish}
               onNext={nextStep}
               onPrev={prevStep}
+              onRetryPic={retryPic}
             />
           )}
         </div>
@@ -232,6 +260,7 @@ export default function Scrappy() {
             onPick={pickPref}
             onClose={closePref}
             onVoice={startVoice}
+            onType={typeIn}
           />
         )}
         {s.keySheetOpen && (
@@ -245,12 +274,6 @@ export default function Scrappy() {
             urgent={finish.urgent}
             onBack={() => setState({ finishOpen: false })}
             onRestart={restart}
-          />
-        )}
-        {s.error && (
-          <ErrorToast
-            error={s.error}
-            onDismiss={() => setState({ error: null })}
           />
         )}
       </div>

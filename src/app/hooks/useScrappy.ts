@@ -11,7 +11,7 @@ import {
   parsePref,
   swapDish,
 } from "@/lib/api";
-import type { AiSettings } from "@/lib/ai";
+import type { AiSettings, CheckFailure } from "@/lib/ai";
 import { clearAi, getAi, getServerAi, storeAi, subscribeAi } from "@/lib/aiStore";
 import {
   startVoiceCapture,
@@ -21,7 +21,14 @@ import {
 import { PREF_TITLES, type PrefKey } from "@/lib/prefs";
 import { defaultUnitSystem, type UnitSystem } from "@/lib/units";
 import { onTheClock } from "../components/freshness";
-import { isPref, type VoiceErrorAction, type VoiceErrorKind } from "../voiceErrors";
+import {
+  aiNames,
+  headsUpWorthy,
+  isPref,
+  needsSettings,
+  type ErrorAction,
+  type FailureKind,
+} from "../errors";
 
 export type Screen = "input" | "settings" | "aiSetup" | "confirm" | "dishes" | "cook";
 /* review: showing what was heard (or a text box) before it's sent to the LLM. */
@@ -49,7 +56,7 @@ export interface ScrappyState {
   reviewEditing: boolean;
   /* The text box was opened to type, not to fix a transcript. */
   reviewTyped: boolean;
-  voiceError: VoiceErrorKind | null;
+  voiceError: FailureKind | null;
   /* The error happened after sending reviewText, which is still there. */
   errorKeptText: boolean;
   /* The connection came back while the offline message was showing. */
@@ -69,25 +76,37 @@ export interface ScrappyState {
   /* The home hint says "All set" once after connecting from home. */
   justConnected: boolean;
   /* Where Settings → AI service goes back to. */
-  setupReturn: "input" | "settings";
+  setupReturn: Screen;
+  /* Opened from a failed request: what to show as wrong there, and whether
+     to bring the model picker into view. */
+  setupFix: { reason: CheckFailure | null; model: boolean } | null;
+  /* The last AI request failed in a way fixed in Settings (or at the
+     provider): the heads-up there. Cleared by the next one that works. */
+  lastFail: FailureKind | null;
   prefs: Prefs;
   dishes: Dish[];
   dishesLoading: boolean;
+  /* Generating dishes failed: shown in place of the spinner. */
+  genError: FailureKind | null;
+  /* Still generating after 30 s, or still swapping. */
+  genSlow: boolean;
+  swapSlow: boolean;
   replacingId: string | null;
+  /* A swap that failed: its card keeps the old dish and says why. */
+  swapError: { id: string; kind: FailureKind; note?: string } | null;
   /* Dish whose "Swap this dish?" choice sheet is open. */
   swapSheetId: string | null;
   /* Dish a guided (spoken or typed) swap applies to. */
   swapTargetId: string | null;
   cookDish: number;
   cookStep: number;
-  imgState: Record<string, "loading" | "ready">;
+  imgState: Record<string, "loading" | "ready" | "failed">;
   imgUrls: Record<string, string>;
   finaleUrl: string | null;
   finaleLoading: boolean;
   prefOpen: boolean;
   prefKey: PrefKey | null;
   finishOpen: boolean;
-  error: string | null;
 }
 
 const INITIAL: ScrappyState = {
@@ -112,10 +131,16 @@ const INITIAL: ScrappyState = {
   keySheetOpen: false,
   justConnected: false,
   setupReturn: "settings",
+  setupFix: null,
+  lastFail: null,
   prefs: { servings: 2, courses: 3, diet: "No restrictions", allergy: "None" },
   dishes: [],
   dishesLoading: false,
+  genError: null,
+  genSlow: false,
+  swapSlow: false,
   replacingId: null,
+  swapError: null,
   swapSheetId: null,
   swapTargetId: null,
   cookDish: 0,
@@ -127,7 +152,6 @@ const INITIAL: ScrappyState = {
   prefOpen: false,
   prefKey: null,
   finishOpen: false,
-  error: null,
 };
 
 const VOICE_TITLES: Record<VoiceContext, string> = {
@@ -174,21 +198,24 @@ function savedPics(): boolean {
   }
 }
 
-// Why a request failed: the user's AI account (out of credit, key refused),
-// the connection if the browser says it's offline, or the service.
-const requestFailure = (err: unknown): VoiceErrorKind => {
-  if (err instanceof ApiError && (err.kind === "credit" || err.kind === "refused")) return err.kind;
+// Why a request failed: what the server said about the AI call, or the
+// connection if the browser says it's offline, or else the service.
+const requestFailure = (err: unknown): FailureKind => {
+  if (err instanceof ApiError && err.kind) return err.kind;
   return navigator.onLine ? "service" : "offline";
 };
 
-const AI_TOAST = {
-  credit: "Your AI account is out of credit (or busy). Top it up, then try again.",
-  refused: "Your AI key was refused. You can change it in Settings, from the home screen.",
+// After this long, the waiting copy admits it's slow (the AI call itself
+// gives up at 2 minutes).
+const SLOW_MS = 30_000;
+const SLOW_LABEL = "Still on it — your AI’s taking its time…";
+
+// What a failed request shows on the AI service screen.
+const FIX_REASON: Partial<Record<FailureKind, CheckFailure>> = {
+  refused: "wrongKey",
+  modelNotFound: "modelNotFound",
+  unreachable: "unreachable",
 };
-const toastFor = (err: unknown, fallback: string) =>
-  err instanceof ApiError && (err.kind === "credit" || err.kind === "refused")
-    ? AI_TOAST[err.kind]
-    : fallback;
 
 export function useScrappy() {
   // Nothing on the first screen shows these settings, so reading them here
@@ -233,6 +260,12 @@ export function useScrappy() {
   // Recognizer callbacks and LLM replies from an older turn are ignored, so a
   // cancelled or restarted flow can't jump screens when a late reply lands.
   const turn = useRef(0);
+  // The same for recipe generation (its "Back to my list" or the header's
+  // back drop a late reply) and for swaps.
+  const genTurn = useRef(0);
+  const swapTurn = useRef(0);
+  // Text to bring back after fixing something in AI settings.
+  const resume = useRef<{ ctx: VoiceContext; text: string } | null>(null);
 
   useEffect(() => {
     return () => {
@@ -284,15 +317,51 @@ export function useScrappy() {
   const closeKeySheet = () => setState({ keySheetOpen: false });
 
   const openAiSetup = (from: "input" | "settings") =>
-    setState({ screen: "aiSetup", setupReturn: from, keySheetOpen: false, justConnected: false });
+    setState({
+      screen: "aiSetup",
+      setupReturn: from,
+      setupFix: null,
+      keySheetOpen: false,
+      justConnected: false,
+    });
+
+  // From a failed request: AI service opens showing what's wrong (or at the
+  // model picker, for "pick a faster model"), and comes back here after.
+  const openAiFix = (kind: FailureKind | "faster") => {
+    closeVoice();
+    setState((s) => ({
+      screen: "aiSetup",
+      setupReturn: s.screen,
+      setupFix: {
+        reason: kind === "faster" ? null : (FIX_REASON[kind] ?? null),
+        model: kind === "faster" || kind === "modelNotFound",
+      },
+      justConnected: false,
+    }));
+  };
 
   // Back to where it was opened from. After connecting from home, the hint
-  // there says "All set — tap and tell me" once.
-  const closeAiSetup = (connected = false) =>
+  // there says "All set — tap and tell me" once. Text a failed request left
+  // behind comes back in the text box, ready to send again.
+  const closeAiSetup = (connected = false) => {
+    const r = resume.current;
+    resume.current = null;
     setState((s) => ({
       screen: s.setupReturn,
-      justConnected: connected && s.setupReturn === "input",
+      setupFix: null,
+      justConnected: connected && s.setupReturn === "input" && !r,
     }));
+    if (r) openTyped(r.ctx, r.text);
+  };
+
+  // Failures fixed in Settings (or at the provider) leave a heads-up there,
+  // until a request works again.
+  const recordFail = (kind: FailureKind) => {
+    if (headsUpWorthy(kind, aiNames(getAi()))) setState({ lastFail: kind });
+  };
+  const requestOk = () => {
+    if (stateRef.current.lastFail) setState({ lastFail: null });
+  };
 
   // The home screen's mic and "type it instead": without a key, they open
   // the "Connect an AI" sheet instead of starting.
@@ -311,7 +380,7 @@ export function useScrappy() {
   useEffect(() => {
     const onOnline = () =>
       setState((s) =>
-        s.voiceState === "error" && s.voiceError === "offline"
+        (s.voiceState === "error" && s.voiceError === "offline") || s.genError === "offline"
           ? { backOnline: true }
           : {},
       );
@@ -324,7 +393,11 @@ export function useScrappy() {
   const swap = async (id: string, note?: string) => {
     const dish = stateRef.current.dishes.find((d) => d.id === id);
     if (!dish) return;
-    setState({ replacingId: id });
+    const my = ++swapTurn.current;
+    setState({ replacingId: id, swapError: null, swapSlow: false });
+    const slow = window.setTimeout(() => {
+      if (my === swapTurn.current) setState({ swapSlow: true });
+    }, SLOW_MS);
     try {
       const { dish: alt } = await swapDish({
         ingredients: stateRef.current.ingredients,
@@ -337,18 +410,36 @@ export function useScrappy() {
         exclude: stateRef.current.dishes.map((d) => d.name),
         note,
       });
+      if (my !== swapTurn.current) return;
+      requestOk();
       setState((s) => ({
         dishes: s.dishes.map((d) => (d.id === id ? alt : d)),
         replacingId: null,
+        swapSlow: false,
       }));
     } catch (err) {
-      setState({ replacingId: null, error: toastFor(err, "Couldn't find another dish.") });
+      if (my !== swapTurn.current) return;
+      const kind = requestFailure(err);
+      recordFail(kind);
+      // The card keeps its dish and says why; the other dishes stay put.
+      setState({ replacingId: null, swapSlow: false, swapError: { id, kind, note } });
+    } finally {
+      window.clearTimeout(slow);
     }
+  };
+
+  // The failed card's button: fix it in Settings, or just try again.
+  const swapErrorAction = () => {
+    const e = stateRef.current.swapError;
+    if (!e) return;
+    if (needsSettings(e.kind, aiNames(getAi()))) return openAiFix(e.kind);
+    swap(e.id, e.note);
   };
 
   // ── Voice ───────────────────────────────────────────────────────────────
 
-  const showVoiceError = (kind: VoiceErrorKind, keptText = false) =>
+  const showVoiceError = (kind: FailureKind, keptText = false) => {
+    recordFail(kind);
     setState({
       voiceState: "error",
       voiceError: kind,
@@ -357,6 +448,14 @@ export function useScrappy() {
       voicePartial: "",
       reviewEditing: false,
     });
+  };
+
+  // While a sent turn is still processing after 30 s, its label says so.
+  const slowLabel = (my: number) =>
+    window.setTimeout(() => {
+      if (my === turn.current && stateRef.current.voiceState === "processing")
+        setState({ processingLabel: SLOW_LABEL });
+    }, SLOW_MS);
 
   const closeVoice = () => {
     turn.current++;
@@ -378,9 +477,11 @@ export function useScrappy() {
       reviewEditing: false,
     });
     if (!navigator.onLine) return showVoiceError("offline", true);
+    const slow = slowLabel(my);
     try {
       const { ingredients } = await parseIngredients({ transcript: text });
       if (my !== turn.current) return;
+      requestOk();
       if (!ingredients.length) return showVoiceError("nofood", true);
       if (ctx === "add") {
         setState((s) => ({
@@ -398,6 +499,8 @@ export function useScrappy() {
       }
     } catch (err) {
       if (my === turn.current) showVoiceError(requestFailure(err), true);
+    } finally {
+      window.clearTimeout(slow);
     }
   };
 
@@ -412,9 +515,11 @@ export function useScrappy() {
       reviewEditing: false,
     });
     if (!navigator.onLine) return showVoiceError("offline", true);
+    const slow = slowLabel(my);
     try {
       const { value } = await parsePref(key, text);
       if (my !== turn.current) return;
+      requestOk();
       setState((s) => ({
         prefs: { ...s.prefs, [key]: value },
         voiceOpen: false,
@@ -423,6 +528,8 @@ export function useScrappy() {
       }));
     } catch (err) {
       if (my === turn.current) showVoiceError(requestFailure(err), true);
+    } finally {
+      window.clearTimeout(slow);
     }
   };
 
@@ -468,7 +575,6 @@ export function useScrappy() {
       voiceTitle: VOICE_TITLES[ctx],
       voicePartial: "",
       reviewEditing: false,
-      error: null,
     });
     if (!navigator.onLine) return showVoiceError("offline");
     try {
@@ -511,8 +617,9 @@ export function useScrappy() {
     if (ctx) startVoice(ctx);
   };
 
-  // Opens the voice sheet straight into an empty text box.
-  const openTyped = (ctx: VoiceContext) => {
+  // Opens the voice sheet straight into a text box: empty, or with text a
+  // failed request left behind.
+  const openTyped = (ctx: VoiceContext, text = "") => {
     voiceRef.current?.cancel();
     turn.current++;
     setState({
@@ -521,15 +628,16 @@ export function useScrappy() {
       voiceContext: ctx,
       voiceState: "review",
       voiceTitle: typedTitle(ctx),
-      reviewText: "",
+      reviewText: text,
       reviewEditing: true,
       reviewTyped: true,
       voicePartial: "",
-      error: null,
     });
   };
 
   const typedInput = () => openTyped("input");
+  // "or type it" under a voice button (add more, a preference).
+  const typeIn = (ctx: VoiceContext) => openTyped(ctx);
 
   const reviewChange = (text: string) => setState({ reviewText: text });
   const reviewEdit = () => setState({ reviewEditing: true });
@@ -543,8 +651,8 @@ export function useScrappy() {
     else if (isPref(ctx)) sendPref(ctx, t);
   };
 
-  const voiceErrorAction = (act: VoiceErrorAction) => {
-    const { voiceContext: ctx, reviewTyped } = stateRef.current;
+  const voiceErrorAction = (act: ErrorAction) => {
+    const { voiceContext: ctx, reviewTyped, reviewText, voiceError } = stateRef.current;
     switch (act) {
       case "record":
         return voiceRetry();
@@ -568,6 +676,11 @@ export function useScrappy() {
         });
         return;
       }
+      case "settings":
+      case "faster":
+        // What they said comes back in the text box once it's fixed.
+        if (ctx && ctx !== "swap" && reviewText.trim()) resume.current = { ctx, text: reviewText };
+        return openAiFix(act === "faster" ? "faster" : (voiceError ?? "service"));
       case "close":
         return voiceCancel();
     }
@@ -598,21 +711,65 @@ export function useScrappy() {
 
   // ── Recipe generation ────────────────────────────────────────────────────
 
-  const generate = async () => {
-    setState({ screen: "dishes", dishesLoading: true, dishes: [], error: null });
+  const generate = () => runGen(stateRef.current.prefs);
+
+  const runGen = async (prefs: Prefs) => {
+    const my = ++genTurn.current;
+    setState({
+      screen: "dishes",
+      dishesLoading: true,
+      dishes: [],
+      genError: null,
+      genSlow: false,
+      swapError: null,
+      backOnline: false,
+    });
+    const slow = window.setTimeout(() => {
+      if (my === genTurn.current) setState({ genSlow: true });
+    }, SLOW_MS);
     try {
       const { dishes } = await generateRecipes({
         ingredients: stateRef.current.ingredients,
-        prefs: stateRef.current.prefs,
+        prefs,
         units: stateRef.current.units,
       });
-      setState({ dishes, dishesLoading: false });
+      if (my !== genTurn.current) return;
+      requestOk();
+      setState({ dishes, dishesLoading: false, genSlow: false });
     } catch (err) {
-      setState({
-        dishesLoading: false,
-        screen: "confirm",
-        error: toastFor(err, "Couldn't build recipes — try again."),
-      });
+      if (my !== genTurn.current) return;
+      const kind = requestFailure(err);
+      recordFail(kind);
+      // Shown in place of the spinner; the list is still on the confirm screen.
+      setState({ dishesLoading: false, genSlow: false, genError: kind });
+    } finally {
+      window.clearTimeout(slow);
+    }
+  };
+
+  // "Back to my list", while waiting or after a failure: a late reply is dropped.
+  const cancelGen = () => {
+    genTurn.current++;
+    setState({ screen: "confirm", dishesLoading: false, genSlow: false, genError: null });
+  };
+
+  const genErrorAction = (act: ErrorAction) => {
+    const kind = stateRef.current.genError;
+    switch (act) {
+      case "retry":
+        return generate();
+      case "backToList":
+        return cancelGen();
+      case "settings":
+        return openAiFix(kind ?? "service");
+      case "faster":
+        return openAiFix("faster");
+      case "fewer": {
+        const prefs = { ...stateRef.current.prefs };
+        prefs.courses = Math.max(1, prefs.courses - 1);
+        setState({ prefs });
+        return runGen(prefs);
+      }
     }
   };
 
@@ -673,11 +830,27 @@ export function useScrappy() {
             })),
           )
           .catch(() =>
-            setState((st) => ({ imgState: { ...st.imgState, [k]: "ready" } })),
+            setState((st) => ({ imgState: { ...st.imgState, [k]: "failed" } })),
           );
       }, delay);
       delay += 1500;
     });
+  };
+
+  // "Retry" under a picture that didn't load.
+  const retryPic = (k: string) => {
+    const [di, si] = k.split("-").map(Number);
+    const step = stateRef.current.dishes[di]?.steps[si];
+    if (!step) return;
+    setState((st) => ({ imgState: { ...st.imgState, [k]: "loading" } }));
+    generateImage({ prompt: step.imagePrompt?.trim() || step.text, kind: "step" })
+      .then(({ url }) =>
+        setState((st) => ({
+          imgState: { ...st.imgState, [k]: "ready" },
+          imgUrls: { ...st.imgUrls, [k]: url },
+        })),
+      )
+      .catch(() => setState((st) => ({ imgState: { ...st.imgState, [k]: "failed" } })));
   };
 
   const startCook = () => {
@@ -729,15 +902,19 @@ export function useScrappy() {
       dishes: "confirm",
       cook: "dishes",
     };
-    if (map[sc]) setState({ screen: map[sc]!, finishOpen: false, error: null });
+    if (sc === "dishes") genTurn.current++; // a reply still on its way is dropped
+    if (map[sc]) setState({ screen: map[sc]!, finishOpen: false, genError: null, genSlow: false });
   };
 
   const restart = () => {
     turn.current++;
+    genTurn.current++;
+    swapTurn.current++;
+    resume.current = null;
     voiceRef.current?.cancel();
     clearCt();
-    const { units, stepPics, caps } = stateRef.current;
-    setRaw({ ...INITIAL, units, stepPics, caps });
+    const { units, stepPics, caps, lastFail } = stateRef.current;
+    setRaw({ ...INITIAL, units, stepPics, caps, lastFail });
   };
 
   return {
@@ -753,6 +930,7 @@ export function useScrappy() {
     reviewSend,
     // Ingredients
     typedInput,
+    typeIn,
     removeIng,
     openAdjust,
     closeAdjust,
@@ -763,6 +941,9 @@ export function useScrappy() {
     closePref,
     // Recipes
     generate,
+    cancelGen,
+    genErrorAction,
+    swapErrorAction,
     openSwap,
     closeSwap,
     swapNow,
@@ -770,6 +951,7 @@ export function useScrappy() {
     swapByText,
     // Cook
     startCook,
+    retryPic,
     setCookDish,
     nextStep,
     prevStep,

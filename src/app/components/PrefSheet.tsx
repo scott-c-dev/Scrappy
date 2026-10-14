@@ -2,7 +2,7 @@ import type { Prefs } from "@/lib/types";
 import { PREF_OPTIONS, PREF_TITLES, type PrefKey } from "@/lib/prefs";
 import type { VoiceContext } from "../hooks/useScrappy";
 import { Mic } from "./Mic";
-import { Chip, Sheet } from "./ui";
+import { Chip, Sheet, TextButton } from "./ui";
 
 interface PrefSheetProps {
   prefKey: PrefKey;
@@ -10,6 +10,7 @@ interface PrefSheetProps {
   onPick: (key: PrefKey, val: string | number) => void;
   onClose: () => void;
   onVoice: (ctx: VoiceContext) => void;
+  onType: (ctx: VoiceContext) => void;
 }
 
 export function PrefSheet({
@@ -18,6 +19,7 @@ export function PrefSheet({
   onPick,
   onClose,
   onVoice,
+  onType,
 }: PrefSheetProps) {
   const opts = PREF_OPTIONS[prefKey] ?? [];
   const cur = prefs[prefKey];
@@ -55,13 +57,19 @@ export function PrefSheet({
           </Chip>
         ))}
       </div>
-      <button
-        onClick={() => onVoice(prefKey)}
-        className="inline-flex cursor-pointer items-center gap-7 self-start bg-transparent p-2 font-body text-13 font-bold text-accent"
-      >
-        <Mic size={14} sw={2.2} />
-        …or just say it
-      </button>
+      <div className="flex items-center justify-between gap-10">
+        <button
+          onClick={() => onVoice(prefKey)}
+          className="inline-flex cursor-pointer items-center gap-7 bg-transparent p-2 font-body text-13 font-bold text-accent"
+        >
+          <Mic size={14} sw={2.2} />
+          …or just say it
+        </button>
+        {/* Anything not in the list — "no mushrooms", "pescatarian". */}
+        <TextButton onClick={() => onType(prefKey)} className="p-2 text-13 text-muted">
+          or type it
+        </TextButton>
+      </div>
     </Sheet>
   );
 }

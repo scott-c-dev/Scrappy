@@ -3,23 +3,40 @@ import type { Dish, FreshnessTag, Ingredient } from "@/lib/types";
 import { countLabel, footerLine, itemsOf, loadingLine, pantryLine, topClaim } from "./dishCopy";
 import { onTheClock } from "./freshness";
 import { SwapIcon } from "./SwapSheet";
-import { PrimaryButton, Spinner, StickyBar } from "./ui";
+import type { ErrorAction, ErrorView } from "../errors";
+import { CloudAlert, ErrorLinks, KeyIcon, MicOff } from "./VoiceSheet";
+import { PrimaryButton, SecondaryButton, Spinner, StickyBar, TextButton } from "./ui";
 
 interface DishesScreenProps {
   loading: boolean;
+  /* Still generating after 30 s. */
+  slow: boolean;
+  /* Generating failed: shown in place of the spinner. */
+  error: ErrorView | null;
   dishes: Dish[];
   replacingId: string | null;
+  swapSlow: boolean;
+  /* A failed swap: the card it's on, its line, and its button. */
+  swapError: { id: string; line: string; button: string } | null;
   ingredients: Ingredient[];
   onSwap: (id: string) => void;
+  onSwapError: () => void;
+  onErrorAction: (act: ErrorAction) => void;
   onStartCook: () => void;
 }
 
 export function DishesScreen({
   loading,
+  slow,
+  error,
   dishes,
   replacingId,
+  swapSlow,
+  swapError,
   ingredients,
   onSwap,
+  onSwapError,
+  onErrorAction,
   onStartCook,
 }: DishesScreenProps) {
   if (loading) {
@@ -28,12 +45,46 @@ export function DishesScreen({
         <Spinner className="size-62 border-4" />
         <div>
           <div className="font-display text-22 font-extrabold text-ink">
-            Raiding your fridge…
+            {slow ? "Still cooking up ideas…" : "Raiding your fridge…"}
           </div>
-          <div className="mt-8 max-w-250 text-14 leading-[1.45] text-ink-soft">
-            {loadingLine(ingredients)}
+          <div className="mt-8 max-w-260 text-14 leading-[1.45] text-pretty text-ink-soft">
+            {slow
+              ? "This one’s taking a while — some AI services are slower than others. I’ll keep at it for up to 2 minutes."
+              : loadingLine(ingredients)}
           </div>
+          {slow && (
+            <TextButton onClick={() => onErrorAction("backToList")} className="mt-14 p-2 text-13 text-muted">
+              Back to my list
+            </TextButton>
+          )}
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-full animate-risein flex-col items-center justify-center gap-15 px-22 py-40 text-center">
+        <div className="flex size-56 items-center justify-center rounded-full bg-rescue-bg text-rescue">
+          {error.icon === "mic" ? <MicOff /> : error.icon === "key" ? <KeyIcon /> : <CloudAlert />}
+        </div>
+        <div className="font-display text-22 font-extrabold text-ink">{error.title}</div>
+        <div className="max-w-290 text-15 leading-[1.45] text-pretty text-ink-soft">{error.body}</div>
+        <div className="mt-6 flex w-full gap-10">
+          {error.secondary && (
+            <SecondaryButton
+              tone="solid"
+              onClick={() => onErrorAction(error.secondary!.act)}
+              className="px-16 py-13 text-14 font-semibold text-ink-soft"
+            >
+              {error.secondary.label}
+            </SecondaryButton>
+          )}
+          <PrimaryButton onClick={() => onErrorAction(error.primary.act)} className="flex-1 p-13 text-15">
+            {error.primary.label}
+          </PrimaryButton>
+        </div>
+        {error.links.length > 0 && <ErrorLinks links={error.links} onPick={onErrorAction} />}
       </div>
     );
   }
@@ -84,10 +135,24 @@ export function DishesScreen({
                 <span className="text-12 leading-[1.4] text-muted">{pantryLine(d.pantry)}</span>
               )}
             </div>
+            {swapError?.id === d.id && (
+              <div
+                role="status"
+                className="flex flex-wrap items-center gap-8 rounded-[10px] bg-rescue-bg px-11 py-8 text-[12.5px] leading-[1.35] text-ink"
+              >
+                <span className="size-6 flex-none rounded-full bg-rescue" />
+                <span className="min-w-0 flex-1">{swapError.line}</span>
+                <TextButton onClick={onSwapError} className="p-0 text-[12.5px] font-bold text-ink">
+                  {swapError.button}
+                </TextButton>
+              </div>
+            )}
             {replacingId === d.id && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-11 rounded-card bg-card">
                 <Spinner className="size-32 border-3" />
-                <div className="text-13 font-semibold text-ink-soft">Finding another one…</div>
+                <div className="text-13 font-semibold text-ink-soft">
+                  {swapSlow ? "Still looking — this one’s slow…" : "Finding another one…"}
+                </div>
               </div>
             )}
           </div>

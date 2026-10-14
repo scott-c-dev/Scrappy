@@ -424,7 +424,7 @@ describe("check before saving (free: model list only)", () => {
     let from = fake.state.requests.length;
     assert.equal((await post(check, { ai: custom() })).json.jsonMode, "schema");
     const probe = fake.state.requests.at(-1)!.body;
-    assert.equal(probe.max_tokens, 50, "a tiny request");
+    assert.equal(probe.max_tokens, 1000, "room for a thinking model, only used tokens billed");
     assert.equal(fake.state.requests.length - from, 2, "model list + one probe");
 
     fake.state.mode = "schema400";

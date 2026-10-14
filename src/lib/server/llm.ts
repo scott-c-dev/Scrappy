@@ -353,7 +353,9 @@ export async function probeJsonMode(config: LlmConfig): Promise<"schema" | "obje
     system: "You are a connection test.",
     user: 'Reply with {"ok": true}.',
     schema: z.object({ ok: z.boolean() }),
-    maxTokens: 50,
+    // Thinking models spend tokens before the answer; too few and the probe
+    // can't tell. Only what's used is billed — a few dozen for most.
+    maxTokens: 1000,
     reasoning: false,
     timeout: 20_000,
   };

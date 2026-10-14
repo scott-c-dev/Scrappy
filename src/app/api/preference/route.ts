@@ -45,7 +45,9 @@ export async function POST(req: Request) {
       system: `Map the user's short spoken phrase to exactly one of these allowed ${key} options: ${choices.join(", ")}. Choose the closest match.`,
       user: `They said: "${transcript}"`,
       schema: z.object({ value: z.enum(choices) }),
-      maxTokens: 500,
+      // Room for models that think before answering (deepseek-flash ran out
+      // at 500 on "no nuts or shellfish please"). Only what's used is billed.
+      maxTokens: 2000,
       reasoning: false,
     });
     // Coerce numeric prefs back to numbers.

@@ -4,8 +4,8 @@ import type { AiFailure } from "@/lib/ai";
 import { classify } from "./llm";
 
 /* The 502 an AI route returns when its LLM call fails. `kind` tells the app
-   why: out of credit, key refused, model not offered, address unreachable,
-   no answer in time, or anything else. */
+   why: out of credit, too busy, key refused, model not offered, address
+   unreachable, no answer in time, or anything else. */
 export function aiErrorResponse(route: string, err: unknown) {
   const e = classify(err);
   console.error(`[${route}] ${e.kind}: ${e.message}${e.detail ? ` — vendor said: ${e.detail}` : ""}`);

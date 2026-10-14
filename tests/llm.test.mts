@@ -355,6 +355,7 @@ describe("failures come back with the right kind", () => {
     ["401", "refused"],
     ["402", "credit"],
     ["429", "credit"],
+    ["429busy", "busy"],
     ["400credit", "credit"],
     ["400", "service"],
     ["404", "modelNotFound"],

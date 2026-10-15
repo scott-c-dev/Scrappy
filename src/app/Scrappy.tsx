@@ -257,6 +257,7 @@ export default function Scrappy() {
           <PrefSheet
             prefKey={s.prefKey}
             prefs={s.prefs}
+            custom={s.customPrefs[s.prefKey]}
             onPick={pickPref}
             onClose={closePref}
             onVoice={startVoice}

@@ -7,6 +7,8 @@ import { Chip, Sheet, TextButton } from "./ui";
 interface PrefSheetProps {
   prefKey: PrefKey;
   prefs: Prefs;
+  /* A value said or typed that isn't a preset; offered as a chip of its own. */
+  custom?: string;
   onPick: (key: PrefKey, val: string | number) => void;
   onClose: () => void;
   onVoice: (ctx: VoiceContext) => void;
@@ -16,13 +18,19 @@ interface PrefSheetProps {
 export function PrefSheet({
   prefKey,
   prefs,
+  custom,
   onPick,
   onClose,
   onVoice,
   onType,
 }: PrefSheetProps) {
-  const opts = PREF_OPTIONS[prefKey] ?? [];
+  const presets = PREF_OPTIONS[prefKey] ?? [];
   const cur = prefs[prefKey];
+  // Their own words, after the presets (which keep their places): the
+  // current value if it isn't a preset, or the last one they said this
+  // cook, so it can be picked again.
+  const own = !presets.includes(cur) ? cur : custom;
+  const opts = own !== undefined && !presets.includes(own) ? [...presets, own] : presets;
 
   const options = opts.map((o) => {
     const active = o === cur;

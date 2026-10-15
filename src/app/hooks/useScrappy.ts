@@ -18,7 +18,7 @@ import {
   VoiceCaptureError,
   type VoiceSession,
 } from "@/lib/voice";
-import { PREF_TITLES, type PrefKey } from "@/lib/prefs";
+import { PREF_OPTIONS, PREF_TITLES, type PrefKey } from "@/lib/prefs";
 import { defaultUnitSystem, type UnitSystem } from "@/lib/units";
 import { onTheClock } from "../components/freshness";
 import {
@@ -106,6 +106,9 @@ export interface ScrappyState {
   finaleLoading: boolean;
   prefOpen: boolean;
   prefKey: PrefKey | null;
+  /* The last value said or typed that isn't a preset ("No spicy"), kept so
+     its sheet can still show it and pick it again after another choice. */
+  customPrefs: Partial<Record<PrefKey, string>>;
   finishOpen: boolean;
 }
 
@@ -151,6 +154,7 @@ const INITIAL: ScrappyState = {
   finaleLoading: false,
   prefOpen: false,
   prefKey: null,
+  customPrefs: {},
   finishOpen: false,
 };
 
@@ -520,8 +524,10 @@ export function useScrappy() {
       const { value } = await parsePref(key, text);
       if (my !== turn.current) return;
       requestOk();
+      const custom = !PREF_OPTIONS[key].includes(value);
       setState((s) => ({
         prefs: { ...s.prefs, [key]: value },
+        ...(custom && { customPrefs: { ...s.customPrefs, [key]: String(value) } }),
         voiceOpen: false,
         voiceState: "idle",
         prefOpen: false,

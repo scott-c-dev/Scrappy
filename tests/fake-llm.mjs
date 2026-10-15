@@ -10,7 +10,7 @@ export function startFakeLlm() {
   const state = {
     requests: [],
     /* ok | badjson | wrongshape | fenced | truncated | refusal | redirect
-       | 400 | 400credit | 401 | 402 | 404 | 429 | models404 | noanswer | slow
+       | 400 | 400credit | 401 | 402 | 404 | 429 | 429busy | models404 | noanswer | slow
        | schema400 | schema422 | schemaIgnored: how vendors without strict-schema
        output react to it (fine once the schema comes in the prompt instead) */
     mode: "ok",
@@ -37,6 +37,7 @@ export function startFakeLlm() {
       if (mode === "401") return fail(401, "invalid key");
       if (mode === "402") return fail(402, "payment required");
       if (mode === "429") return fail(429, "You exceeded your current quota");
+      if (mode === "429busy") return send(429, { error: { message: "Rate limit reached for requests", code: "rate_limit_exceeded" } });
       if (mode === "400credit") return fail(400, "Your credit balance is too low to access the API");
       if (mode === "400") return fail(400, "unsupported parameter");
       if (mode === "404") return fail(404, "model not found");

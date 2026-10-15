@@ -21,6 +21,7 @@ export const maxDuration = 150;
 const REASON: Record<LlmFailureKind, CheckFailure> = {
   refused: "wrongKey",
   credit: "wrongKey",
+  busy: "unreachable",
   modelNotFound: "modelNotFound",
   unreachable: "unreachable",
   timeout: "unreachable",

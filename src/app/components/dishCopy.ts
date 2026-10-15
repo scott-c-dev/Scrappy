@@ -61,8 +61,8 @@ export function footerLine(dishes: Dish[], all: Ingredient[]): string {
 export function loadingLine(all: Ingredient[]): string {
   const urgent = byFreshness(all.filter((i) => onTheClock(i.tag)), all).map(lc);
   return urgent.length
-    ? `Putting your ${nameList(urgent)} at the front of the queue. Two seconds.`
-    : "Sizing up what you’ve got. Two seconds.";
+    ? `Putting your ${nameList(urgent)} at the front of the queue.`
+    : "Sizing up what you’ve got.";
 }
 
 export function swapLine(dish: Dish, all: Ingredient[]): string {

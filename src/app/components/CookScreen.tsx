@@ -1,18 +1,20 @@
 import { cx } from "@/lib/cx";
-import { PrimaryButton, SecondaryButton, StickyBar, Spinner } from "./ui";
+import { PrimaryButton, SecondaryButton, StickyBar, Spinner, TextButton } from "./ui";
 import type { Dish } from "@/lib/types";
 
 interface CookScreenProps {
   dishes: Dish[];
   cookDish: number;
   cookStep: number;
-  imgState: Record<string, "loading" | "ready">;
+  imgState: Record<string, "loading" | "ready" | "failed">;
   imgUrls: Record<string, string>;
   /* The Step pictures setting. Off: text only, and no "no photo needed" note. */
   pictures: boolean;
   onSetDish: (i: number) => void;
   onNext: () => void;
   onPrev: () => void;
+  /* "Retry" under a picture that didn't load (key "dish-step"). */
+  onRetryPic: (key: string) => void;
 }
 
 export function CookScreen({
@@ -25,6 +27,7 @@ export function CookScreen({
   onSetDish,
   onNext,
   onPrev,
+  onRetryPic,
 }: CookScreenProps) {
   const di = cookDish;
   const stepsArr = dishes[di]?.steps ?? [];
@@ -91,7 +94,16 @@ export function CookScreen({
       </div>
       {showImage && (
         <div>
-          {imgSt !== "ready" ? (
+          {imgSt === "failed" ? (
+            // Quietly: the words are enough to cook from.
+            <div className="flex items-center gap-8 py-2 text-12 text-muted">
+              <span className="size-5 flex-none rounded-full bg-muted" />
+              <span>Picture didn&apos;t load — the words have you covered.</span>
+              <TextButton onClick={() => onRetryPic(imgKey)} className="p-0 text-12 text-ink-soft">
+                Retry
+              </TextButton>
+            </div>
+          ) : imgSt !== "ready" ? (
             <div className="relative flex h-184 w-full flex-col items-center justify-center gap-11 overflow-hidden rounded-tile bg-accent-soft">
               <div className="absolute top-0 bottom-0 left-0 w-[55%] animate-shimmer bg-[linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent)]" />
               <Spinner light className="relative size-30 border-3" />

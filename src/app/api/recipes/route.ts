@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { aiErrorResponse } from "@/lib/server/aiResponse";
 import { generateJson, llmConfig, type LlmConfig } from "@/lib/server/llm";
-import { mockAI, mockDelay, mockDishes, mockSwap } from "@/lib/server/mock";
+import { mockAI, mockDelay, mockDishes, mockFailure, mockRecipeTrouble, mockSwap } from "@/lib/server/mock";
 import { isStaple, normalize, STAPLES } from "@/lib/staples";
 import type { Dish, Ingredient, Prefs, Step } from "@/lib/types";
 import { amountText, type UnitSystem } from "@/lib/units";
@@ -194,6 +194,8 @@ export async function POST(req: Request) {
   const note = body.note?.trim();
 
   if (mockAI()) {
+    const trouble = (note && mockFailure(note)) || (await mockRecipeTrouble());
+    if (trouble) return trouble;
     await mockDelay(1500);
     return isSwap
       ? NextResponse.json({

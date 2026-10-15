@@ -4,12 +4,13 @@ import type { PrefKey } from "@/lib/prefs";
 import { amountText } from "@/lib/units";
 import { onTheClock, tierOf } from "./freshness";
 import { Mic } from "./Mic";
-import { Chip, PrimaryButton, StickyBar } from "./ui";
+import { Chip, PrimaryButton, StickyBar, TextButton } from "./ui";
 
 interface ConfirmScreenProps {
   ingredients: Ingredient[];
   prefs: Prefs;
   onAddVoice: () => void;
+  onAddType: () => void;
   onRemove: (id: string) => void;
   /* Opens the adjust card (amount, unit, freshness) for an ingredient. */
   onAdjust: (id: string) => void;
@@ -21,6 +22,7 @@ export function ConfirmScreen({
   ingredients,
   prefs,
   onAddVoice,
+  onAddType,
   onRemove,
   onAdjust,
   onOpenPref,
@@ -132,13 +134,18 @@ export function ConfirmScreen({
             </div>
           </div>
         )}
-        <button
-          onClick={onAddVoice}
-          className="inline-flex cursor-pointer items-center gap-7 self-start rounded-full border border-dashed border-accent bg-transparent px-14 py-8 font-body text-13 font-bold text-accent"
-        >
-          <Mic size={14} sw={2.2} />
-          Add more by voice
-        </button>
+        <div className="flex flex-wrap items-center gap-14">
+          <button
+            onClick={onAddVoice}
+            className="inline-flex cursor-pointer items-center gap-7 rounded-full border border-dashed border-accent bg-transparent px-14 py-8 font-body text-13 font-bold text-accent"
+          >
+            <Mic size={14} sw={2.2} />
+            Add more by voice
+          </button>
+          <TextButton onClick={onAddType} className="p-2 text-13 text-muted">
+            or type it
+          </TextButton>
+        </div>
         <div className="my-2 h-1 bg-line" />
         <div>
           <span className="label-caps text-muted">A few defaults — tap to change</span>

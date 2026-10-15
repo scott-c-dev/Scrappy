@@ -67,7 +67,10 @@ export async function POST(req: Request) {
       system: SYSTEM,
       user: `Here is what the user said is in their fridge: "${transcript}". Extract the ingredient list.`,
       schema: SCHEMA,
-      maxTokens: 2000,
+      // Thinking models deliberate over vague lists ("a handful", "a splash",
+      // eggs named twice) — deepseek-flash ran out at 2000. Kept under the
+      // common 8K output cap; only what's used is billed.
+      maxTokens: 6000,
     });
 
     const tagFor = (f: string): FreshnessTag =>

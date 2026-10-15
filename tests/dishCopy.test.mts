@@ -69,8 +69,8 @@ describe("copy", () => {
   });
 
   test("loading names everything on the clock, before dishes exist", () => {
-    assert.equal(loadingLine(ALL), "Putting your cabbage, tofu & leftover rice at the front of the queue. Two seconds.");
-    assert.equal(loadingLine(UNTAGGED), "Sizing up what you’ve got. Two seconds.");
+    assert.equal(loadingLine(ALL), "Putting your cabbage, tofu & leftover rice at the front of the queue.");
+    assert.equal(loadingLine(UNTAGGED), "Sizing up what you’ve got.");
   });
 
   test("swap line promises the priority, not specific items", () => {

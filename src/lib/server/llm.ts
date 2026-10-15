@@ -34,7 +34,8 @@ const OFFICIAL_URL: Record<ApiFormat, string> = {
 /* What went wrong, in the terms the app shows people. */
 export type LlmFailureKind =
   | "refused" // key rejected
-  | "credit" // out of credit, or rate-limited
+  | "credit" // out of credit
+  | "busy" // rate-limited: too many requests just now
   | "modelNotFound"
   | "unreachable"
   | "timeout" // reached it, but no answer in time
@@ -153,11 +154,15 @@ export function classify(err: unknown): LlmError {
   if (err instanceof Anthropic.APIError || err instanceof OpenAI.APIError) {
     const { status, message } = err;
     if (status === 401 || status === 403) return new LlmError("refused", "the AI key was refused");
-    // OpenAI: 429 insufficient_quota (no credit) or a rate limit.
-    // Anthropic: 400 "credit balance is too low", or 429 rate limit.
-    if (status === 402 || status === 429 || (status === 400 && /credit|billing|quota/i.test(message))) {
-      return new LlmError("credit", "the AI account is out of credit or busy");
+    // Out of money: OpenAI's 429 insufficient_quota, Anthropic's 400 "credit
+    // balance is too low", or a 402. Any other 429 is a rate limit: busy,
+    // fixed by waiting rather than topping up.
+    const said = `${message} ${(err as { code?: unknown }).code ?? ""}`;
+    const noMoney = /credit|billing|quota|balance|payment/i.test(said);
+    if (status === 402 || ((status === 429 || status === 400) && noMoney)) {
+      return new LlmError("credit", "the AI account is out of credit");
     }
+    if (status === 429) return new LlmError("busy", "the AI service is getting too many requests");
     if (status === 404) return new LlmError("modelNotFound", "the AI service doesn't offer that model");
     return new LlmError("service", `the AI service returned ${status ?? "an error"}`, {
       detail: vendorText(err.error ?? message),
@@ -240,6 +245,7 @@ async function attempt<T extends z.ZodType>(
   try {
     data = JSON.parse(extractJson(text));
   } catch {
+    console.error(`[llm] reply wasn't valid JSON (${text.length} chars): ${text.slice(0, 200)}…${text.slice(-120)}`);
     throw new LlmError("service", "the model's reply wasn't valid JSON", { formatIssue: true });
   }
   const parsed = req.schema.safeParse(dropNulls(data));
@@ -348,7 +354,9 @@ export async function probeJsonMode(config: LlmConfig): Promise<"schema" | "obje
     system: "You are a connection test.",
     user: 'Reply with {"ok": true}.',
     schema: z.object({ ok: z.boolean() }),
-    maxTokens: 50,
+    // Thinking models spend tokens before the answer; too few and the probe
+    // can't tell. Only what's used is billed — a few dozen for most.
+    maxTokens: 1000,
     reasoning: false,
     timeout: 20_000,
   };

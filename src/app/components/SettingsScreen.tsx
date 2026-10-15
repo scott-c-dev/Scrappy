@@ -6,6 +6,8 @@ import { Segmented } from "./ui";
 interface SettingsScreenProps {
   ai: AiSettings | null;
   onAiService: () => void;
+  /* The last AI request failed in a way fixed here (or at the provider). */
+  headsUp: string | null;
   units: UnitSystem;
   onUnits: (units: UnitSystem) => void;
   /* Step pictures need an image service on this server; without one the
@@ -31,6 +33,7 @@ const PICS: [boolean, string][] = [
 export function SettingsScreen({
   ai,
   onAiService,
+  headsUp,
   units,
   onUnits,
   images,
@@ -66,6 +69,15 @@ export function SettingsScreen({
             </span>
           )}
         </button>
+        {headsUp && (
+          <div role="status" className="flex items-start gap-10 rounded-tile bg-rescue-bg px-14 py-12">
+            <span className="mt-5 size-8 flex-none rounded-full bg-rescue" />
+            <div className="flex min-w-0 flex-col gap-2">
+              <span className="text-13 font-bold text-ink">Last request failed</span>
+              <span className="text-13 leading-[1.45] text-pretty text-ink-soft">{headsUp}</span>
+            </div>
+          </div>
+        )}
         {ai && !ai.remember && (
           <span className="px-4 text-12 leading-[1.45] text-muted">
             Not remembered — you&apos;ll add the key again next time you open Scrappy.

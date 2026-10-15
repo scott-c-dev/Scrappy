@@ -1,5 +1,5 @@
 import type { VoiceContext, VoiceState } from "../hooks/useScrappy";
-import { isPref, type VoiceErrorAction, type VoiceErrorView } from "../voiceErrors";
+import { isPref, type ErrorAction, type ErrorView } from "../errors";
 import { Mic } from "./Mic";
 import { PrimaryButton, SecondaryButton, Sheet, Spinner, TextButton } from "./ui";
 
@@ -15,14 +15,14 @@ interface VoiceSheetProps {
   reviewText: string;
   reviewEditing: boolean;
   reviewTyped: boolean;
-  error: VoiceErrorView | null;
+  error: ErrorView | null;
   onDone: () => void;
   onCancel: () => void;
   onReviewChange: (text: string) => void;
   onReviewEdit: () => void;
   onReviewRedo: () => void;
   onReviewSend: () => void;
-  onErrorAction: (act: VoiceErrorAction) => void;
+  onErrorAction: (act: ErrorAction) => void;
 }
 
 export function VoiceSheet({
@@ -182,6 +182,7 @@ export function VoiceSheet({
               {error.primary.label}
             </PrimaryButton>
           </div>
+          {error.links.length > 0 && <ErrorLinks links={error.links} onPick={onErrorAction} />}
         </div>
       )}
 
@@ -194,7 +195,26 @@ export function VoiceSheet({
   );
 }
 
-function MicOff() {
+/* Small extra ways out under an error's buttons (a timeout's "fewer dishes"). */
+export function ErrorLinks({
+  links,
+  onPick,
+}: {
+  links: ErrorView["links"];
+  onPick: (act: ErrorAction) => void;
+}) {
+  return (
+    <div className="flex flex-wrap justify-center gap-18">
+      {links.map((l) => (
+        <TextButton key={l.act} onClick={() => onPick(l.act)} className="p-2 text-13 text-muted">
+          {l.label}
+        </TextButton>
+      ))}
+    </div>
+  );
+}
+
+export function MicOff() {
   return (
     <svg
       width="24"
@@ -214,7 +234,7 @@ function MicOff() {
   );
 }
 
-function CloudAlert() {
+export function CloudAlert() {
   return (
     <svg
       width="24"
@@ -233,7 +253,7 @@ function CloudAlert() {
   );
 }
 
-function KeyIcon() {
+export function KeyIcon() {
   return (
     <svg
       width="24"

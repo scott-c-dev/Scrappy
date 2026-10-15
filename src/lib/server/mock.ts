@@ -5,14 +5,18 @@
 
    The fakes respond to what was actually said, so every UI path is reachable:
    naming foods gives an ingredient list, saying no known food gives an empty
-   one (the "no food" message), and saying "out of credit", "key refused" or
-   "server error" shows that message. The AI key check answers too: a key
-   containing "wrong", "nomodel" or "down" fails that way; anything else
-   connects. The README's "Mock mode" section lists all of these. */
+   one (the "no food" message), and saying "out of credit", "too busy", "key
+   refused", "no such model", "can't reach", "too slow" or "server error"
+   shows that message (also as a swap's "what should change"). Recipe
+   generation hears no words, so MOCK_FAIL_RECIPES=<kind> or =slow sets how
+   it goes. The AI key check answers too: a key containing "wrong",
+   "nomodel" or "down" fails that way, "jsononly" connects but only with
+   JSON mode; anything else connects. The README's
+   "Mock mode" section lists all of these. */
 
 import "server-only";
 import { NextResponse } from "next/server";
-import type { CheckFailure } from "@/lib/ai";
+import type { AiFailure, CheckFailure } from "@/lib/ai";
 import type { FreshnessTag, Ingredient, Dish, Prefs, Step } from "@/lib/types";
 
 export function mockAI(): boolean {
@@ -25,21 +29,41 @@ export const mockDelay = (ms = 900) => new Promise((r) => setTimeout(r, ms));
 
 // ── AI key failures ──────────────────────────────────────────────────────────
 
+const PHRASES: [RegExp, AiFailure][] = [
+  [/out of credit/, "credit"],
+  [/too busy/, "busy"],
+  [/key refused/, "refused"],
+  [/no such model/, "modelNotFound"],
+  [/can['’]?t reach/, "unreachable"],
+  [/too slow/, "timeout"],
+  [/server error/, "service"],
+];
+
+const failed = (kind: AiFailure) =>
+  NextResponse.json({ error: `mock: ${kind}`, kind }, { status: 502 });
+
 /* A 502 like a real failed AI call, when the text asks for one. */
 export function mockFailure(text: string) {
   const t = text.toLowerCase();
-  const kind = /out of credit/.test(t)
-    ? "credit"
-    : /key refused/.test(t)
-      ? "refused"
-      : /server error/.test(t)
-        ? "service"
-        : null;
-  return kind && NextResponse.json({ error: `mock: ${kind}`, kind }, { status: 502 });
+  const kind = PHRASES.find(([re]) => re.test(t))?.[1];
+  return kind ? failed(kind) : null;
 }
 
-export function mockCheck(key: string): { reason: CheckFailure } | { models: string[] } {
+/* How mock recipe generation goes, from MOCK_FAIL_RECIPES: a failure kind,
+   "slow" (answers after 35 s, past the app's 30 s "still cooking" point),
+   or unset (fine). "timeout" also waits 35 s first, as a real one would. */
+export async function mockRecipeTrouble() {
+  const v = process.env.MOCK_FAIL_RECIPES?.trim() as AiFailure | "slow" | undefined;
+  if (!v) return null;
+  if (v === "slow" || v === "timeout") await mockDelay(35_000);
+  return v === "slow" ? null : failed(v);
+}
+
+export function mockCheck(
+  key: string,
+): { reason: CheckFailure } | { models: string[]; jsonMode?: "object" } {
   const k = key.toLowerCase();
+  if (k.includes("jsononly")) return { models: ["mock-model"], jsonMode: "object" };
   if (k.includes("wrong")) return { reason: "wrongKey" };
   if (k.includes("nomodel")) return { reason: "modelNotFound" };
   if (k.includes("down")) return { reason: "unreachable" };
@@ -184,6 +208,12 @@ export function mockIngredients(transcript: string): Ingredient[] {
 
 // ── Preferences ──────────────────────────────────────────────────────────────
 
+// A diet or allergy not in the list, kept in the person's words.
+const ownWords = (s: string) => {
+  const t = s.trim().slice(0, 60);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
 export function mockPref(key: keyof Prefs, transcript: string): string | number {
   const t = transcript.toLowerCase();
   if (key === "servings" || key === "courses") {
@@ -197,13 +227,15 @@ export function mockPref(key: keyof Prefs, transcript: string): string | number 
     if (/veg/.test(t)) return "Vegetarian";
     if (/oil|light|lean/.test(t)) return "Low-oil";
     if (/protein|gym|muscle/.test(t)) return "High-protein";
-    return "No restrictions";
+    if (/^(none|nothing|no restrictions?|anything)$/.test(t.trim())) return "No restrictions";
+    return ownWords(transcript);
   }
   if (/peanut|nut/.test(t)) return "Peanuts";
   if (/shellfish|shrimp|prawn|crab/.test(t)) return "Shellfish";
   if (/gluten|wheat/.test(t)) return "Gluten";
   if (/dairy|milk|lactose/.test(t)) return "Dairy";
-  return "None";
+  if (/^(none|nothing|no allergies)$/.test(t.trim())) return "None";
+  return ownWords(transcript);
 }
 
 // ── Recipes ──────────────────────────────────────────────────────────────────

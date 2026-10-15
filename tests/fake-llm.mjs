@@ -4,7 +4,7 @@
    No credits needed. */
 import http from "node:http";
 
-export const MODELS = ["claude-sonnet-5-5", "gpt-6-luna", "vendor-model", "text-embedding-3-small"];
+export const MODELS = ["claude-haiku-5-5", "gpt-6-luna", "vendor-model", "text-embedding-3-small"];
 
 export function startFakeLlm() {
   const state = {

@@ -24,7 +24,8 @@ export interface AiSettings {
 
 /* Cheap current models that do the job well. Custom has no default. */
 export const DEFAULT_MODEL: Record<Exclude<AiProvider, "custom">, string> = {
-  claude: "claude-sonnet-5-5",
+  // $0.10 / $0.50 per MTok for prompts under 100K tokens (all of Scrappy's).
+  claude: "claude-haiku-5-5",
   openai: "gpt-6-luna",
 };
 

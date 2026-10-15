@@ -98,7 +98,7 @@ describe("official Claude (defaults)", () => {
     const req = lastRequest();
     assert.equal(req.path, "/v1/messages");
     assert.equal(req.headers["x-api-key"], "sk-ant-test");
-    assert.equal(req.body.model, "claude-sonnet-5-5", "no model saved = Scrappy's default");
+    assert.equal(req.body.model, "claude-haiku-5-5", "no model saved = Scrappy's default");
     assert.equal(req.body.max_tokens, 6000);
     assert.equal(req.body.thinking, undefined);
     assert.equal(req.body.output_config.effort, undefined);
@@ -397,7 +397,7 @@ describe("failures come back with the right kind", () => {
 describe("check before saving (free: model list only)", () => {
   test("official key: ok, with chat models only", async () => {
     const { json } = await post(check, { ai: claude() });
-    assert.deepEqual(json, { ok: true, models: ["claude-sonnet-5-5", "gpt-6-luna", "vendor-model"] });
+    assert.deepEqual(json, { ok: true, models: ["claude-haiku-5-5", "gpt-6-luna", "vendor-model"] });
     const req = lastRequest();
     assert.equal(req.method, "GET");
     assert.match(req.path, /^\/v1\/models/);
@@ -412,7 +412,7 @@ describe("check before saving (free: model list only)", () => {
       const listed = await post(check, { ai: claude(), listOnly: true });
       assert.deepEqual(listed.json, { ok: true, models: ["claude-haiku-4-5"] }, "the picker still gets the list");
     } finally {
-      fake.state.models = ["claude-sonnet-5-5", "gpt-6-luna", "vendor-model", "text-embedding-3-small"];
+      fake.state.models = ["claude-haiku-5-5", "gpt-6-luna", "vendor-model", "text-embedding-3-small"];
     }
   });
 
@@ -451,7 +451,7 @@ describe("check before saving (free: model list only)", () => {
   test("a probe that can't tell never fails the check", async () => {
     fake.state.mode = "truncated";
     const { json } = await post(check, { ai: custom() });
-    assert.deepEqual(json, { ok: true, models: ["claude-sonnet-5-5", "gpt-6-luna", "vendor-model"] });
+    assert.deepEqual(json, { ok: true, models: ["claude-haiku-5-5", "gpt-6-luna", "vendor-model"] });
   });
 
   test("the picker's list-only call never probes", async () => {

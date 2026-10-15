@@ -151,7 +151,7 @@ good default.
   service, one tiny request also finds whether it takes
   Structured Outputs; if not, JSON mode is switched on and the screen says so.
   Running out of credit shows up at first use, with its own message.
-- **Models:** Claude uses `claude-sonnet-5-5` and OpenAI `gpt-6-luna` (reasoning
+- **Models:** Claude uses `claude-haiku-5-5` and OpenAI `gpt-6-luna` (reasoning
   `low`) unless you pick another. The default is saved as "Scrappy's default",
   so a newer default in the code reaches everyone who never picked a model.
 - **Other services (Custom):** any Claude-style or OpenAI-style (Chat

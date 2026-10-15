@@ -14,15 +14,20 @@ import { z } from "zod";
 import { DEFAULT_MODEL, type ApiFormat } from "@/lib/ai";
 import { assertPublicUrl, PrivateAddressError } from "./netguard";
 
+/* The two kinds of AI call, which want different effort (see JsonRequest.task). */
+export type Task = "quick" | "full";
+const NO_EFFORT: Record<Task, undefined> = { quick: undefined, full: undefined };
+
 export interface LlmConfig {
   format: ApiFormat;
   apiKey: string;
   /* Unset = the format's official endpoint. */
   baseURL: string | undefined;
   model: string;
-  /* Sent as-is: Anthropic `effort` (with adaptive thinking) or OpenAI
-     `reasoning_effort`. Unset = neither is sent. */
-  effort: string | undefined;
+  /* Effort per kind of task, sent as Anthropic `effort` (with adaptive
+     thinking) or OpenAI `reasoning_effort`. Unset = neither is sent, and
+     the service uses its own default. */
+  effort: Record<Task, string | undefined>;
   jsonMode: "schema" | "object";
 }
 
@@ -94,9 +99,10 @@ export function llmConfig(input: unknown): LlmConfig {
       apiKey: key,
       baseURL: undefined,
       model: model ?? DEFAULT_MODEL[s.provider],
-      // OpenAI's default model reasons at medium unless told otherwise, so it
-      // comes with low; a model someone picked gets no reasoning setting.
-      effort: s.provider === "openai" && !model ? "low" : undefined,
+      // Scrappy's own default model gets low for quick reading and medium
+      // for recipes. A model someone picked gets none: the pickers list
+      // older models too, and some reject the setting (Claude Haiku 4.5).
+      effort: model ? NO_EFFORT : { quick: "low", full: "medium" },
       jsonMode: "schema",
     };
   }
@@ -109,7 +115,10 @@ export function llmConfig(input: unknown): LlmConfig {
     apiKey: key,
     baseURL,
     model,
-    effort: s.effort ?? undefined,
+    // Choosing an effort says the service takes one: theirs for recipes,
+    // low for quick reading. Left on Default, nothing is ever sent — an
+    // unknown service may reject the setting.
+    effort: s.effort ? { quick: "low", full: s.effort } : NO_EFFORT,
     jsonMode: s.jsonMode ? "object" : "schema",
   };
 }
@@ -188,8 +197,10 @@ interface JsonRequest<T extends z.ZodType> {
      the schema as a hint can still slip, and the caller cleans that up. */
   wireSchema?: z.ZodType;
   maxTokens: number;
-  /* false for trivial calls where thinking only adds latency. */
-  reasoning?: boolean;
+  /* "quick": reading a list or a phrase (ingredients, preferences), where
+     thinking mostly adds delay. "full": building recipes under hard rules
+     (default). */
+  task?: Task;
   /* The whole call's time budget in ms (default 120 s): every attempt
      shares it, the SDK's own retries and the object-mode fallback alike. */
   timeout?: number;
@@ -277,7 +288,7 @@ async function viaAnthropic(
   schema: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const effort = req.reasoning === false ? undefined : config.effort;
+  const effort = config.effort[req.task ?? "full"];
   const object = config.jsonMode === "object";
   const res = await client.messages.create({
     model: config.model,
@@ -308,7 +319,7 @@ async function viaOpenAIChat(
   signal: AbortSignal,
 ): Promise<string> {
   const official = !config.baseURL;
-  const effort = req.reasoning === false ? undefined : config.effort;
+  const effort = config.effort[req.task ?? "full"];
 
   // Vendors without json_schema support get the schema in the prompt instead.
   const system = config.jsonMode === "object" ? withSchema(req.system, schema) : req.system;
@@ -357,7 +368,7 @@ export async function probeJsonMode(config: LlmConfig): Promise<"schema" | "obje
     // Thinking models spend tokens before the answer; too few and the probe
     // can't tell. Only what's used is billed — a few dozen for most.
     maxTokens: 1000,
-    reasoning: false,
+    task: "quick" as const,
     timeout: 20_000,
   };
   const deadline = AbortSignal.timeout(req.timeout);

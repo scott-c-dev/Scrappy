@@ -100,8 +100,8 @@ describe("official Claude (defaults)", () => {
     assert.equal(req.headers["x-api-key"], "sk-ant-test");
     assert.equal(req.body.model, "claude-haiku-5-5", "no model saved = Scrappy's default");
     assert.equal(req.body.max_tokens, 6000);
-    assert.equal(req.body.thinking, undefined);
-    assert.equal(req.body.output_config.effort, undefined);
+    assert.deepEqual(req.body.thinking, { type: "adaptive" });
+    assert.equal(req.body.output_config.effort, "low", "default model: low for quick reading");
     assert.deepEqual(req.body.output_config.format.schema, {
       type: "object",
       properties: {
@@ -134,7 +134,7 @@ describe("official Claude (defaults)", () => {
 });
 
 describe("official OpenAI (defaults)", () => {
-  test("default model comes with low reasoning; OpenAI's token field", async () => {
+  test("default model: medium for recipes, low for reading; OpenAI's token field", async () => {
     fake.state.reply = { dishes: [DISH] };
     const { status } = await post(recipes, { ...RECIPE_BODY, ai: openai() });
     assert.equal(status, 200);
@@ -142,16 +142,23 @@ describe("official OpenAI (defaults)", () => {
     assert.equal(req.path, "/v1/chat/completions");
     assert.equal(req.headers.authorization, "Bearer sk-proj-test");
     assert.equal(req.body.model, "gpt-6-luna");
-    assert.equal(req.body.reasoning_effort, "low");
+    assert.equal(req.body.reasoning_effort, "medium", "recipes");
     assert.equal(req.body.max_completion_tokens, 8000);
+    fake.state.reply = ING_REPLY;
+    await post(ingredients, { transcript: "cabbage", ai: openai() });
+    assert.equal(lastRequest().body.reasoning_effort, "low", "ingredients");
     assert.equal(req.body.max_tokens, undefined);
   });
 
-  test("a model the user picked gets no reasoning setting", async () => {
+  test("a model the user picked gets no reasoning setting, for any task", async () => {
     fake.state.reply = { value: "4" };
     await post(preference, { key: "servings", transcript: "four", ai: openai({ model: "gpt-6-sol" }) });
     assert.equal(lastRequest().body.model, "gpt-6-sol");
     assert.equal(lastRequest().body.reasoning_effort, undefined);
+    fake.state.reply = { dishes: [DISH] };
+    await post(recipes, { ...RECIPE_BODY, ai: claude({ model: "claude-haiku-4-5" }) });
+    assert.equal(lastRequest().body.output_config.effort, undefined, "Haiku 4.5 rejects effort");
+    assert.equal(lastRequest().body.thinking, undefined);
   });
 });
 
@@ -319,7 +326,7 @@ describe("custom service", () => {
     assert.deepEqual(json.dishes[0].steps.map((s: { img: boolean }) => s.img), [false, true]);
   });
 
-  test("plain JSON mode + effort; fenced JSON still parses", async () => {
+  test("plain JSON mode + a chosen effort: theirs for recipes, low for reading; fenced JSON still parses", async () => {
     fake.state.mode = "fenced";
     fake.state.reply = ING_REPLY;
     const { status, json } = await post(ingredients, { transcript: "cabbage", ai: custom({ jsonMode: true, effort: "high" }) });
@@ -328,11 +335,24 @@ describe("custom service", () => {
     const req = lastRequest();
     assert.deepEqual(req.body.response_format, { type: "json_object" });
     assert.match(req.body.messages[0].content, /JSON Schema/);
-    assert.equal(req.body.reasoning_effort, "high");
+    assert.equal(req.body.reasoning_effort, "low", "ingredients: quick");
+    fake.state.mode = "ok";
+    fake.state.reply = { dishes: [DISH] };
+    await post(recipes, { ...RECIPE_BODY, ai: custom({ jsonMode: true, effort: "high" }) });
+    assert.equal(lastRequest().body.reasoning_effort, "high", "recipes: their choice");
   });
 
-  test("Claude-style with effort: adaptive thinking; preference skips it", async () => {
-    const ai = custom({ format: "anthropic", baseURL: fake.url, effort: "low" });
+  test("custom service on Default effort: nothing sent, for any task", async () => {
+    fake.state.reply = ING_REPLY;
+    await post(ingredients, { transcript: "cabbage", ai: custom() });
+    assert.equal(lastRequest().body.reasoning_effort, undefined);
+    fake.state.reply = { dishes: [DISH] };
+    await post(recipes, { ...RECIPE_BODY, ai: custom() });
+    assert.equal(lastRequest().body.reasoning_effort, undefined);
+  });
+
+  test("Claude-style with a chosen effort: adaptive thinking; preferences read at low", async () => {
+    const ai = custom({ format: "anthropic", baseURL: fake.url, effort: "high" });
     fake.state.reply = ING_REPLY;
     await post(ingredients, { transcript: "cabbage", ai });
     assert.deepEqual(lastRequest().body.thinking, { type: "adaptive" });
@@ -340,7 +360,8 @@ describe("custom service", () => {
     fake.state.reply = { value: "4" };
     const { json } = await post(preference, { key: "servings", transcript: "four of us", ai });
     assert.equal(json.value, 4);
-    assert.equal(lastRequest().body.thinking, undefined);
+    assert.deepEqual(lastRequest().body.thinking, { type: "adaptive" });
+    assert.equal(lastRequest().body.output_config.effort, "low");
   });
 
   test("a server that needs no key", async () => {

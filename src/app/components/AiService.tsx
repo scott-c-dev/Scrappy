@@ -73,7 +73,8 @@ interface AiSetupScreenProps {
 }
 
 const EFFORTS: [AiEffort | null, string][] = [
-  [null, "Default"],
+  // Auto: send none, and let the service decide.
+  [null, "Auto"],
   ["low", "Low"],
   ["medium", "Medium"],
   ["high", "High"],

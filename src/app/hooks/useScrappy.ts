@@ -100,6 +100,9 @@ export interface ScrappyState {
   swapTargetId: string | null;
   cookDish: number;
   cookStep: number;
+  /* The step each dish was left on, so switching dishes picks up where
+     that dish was (dish index → step). */
+  stepMem: Record<number, number>;
   imgState: Record<string, "loading" | "ready" | "failed">;
   imgUrls: Record<string, string>;
   finaleUrl: string | null;
@@ -148,6 +151,7 @@ const INITIAL: ScrappyState = {
   swapTargetId: null,
   cookDish: 0,
   cookStep: 0,
+  stepMem: {},
   imgState: {},
   imgUrls: {},
   finaleUrl: null,
@@ -860,12 +864,15 @@ export function useScrappy() {
   };
 
   const startCook = () => {
-    setState({ screen: "cook", cookDish: 0, cookStep: 0 });
+    setState({ screen: "cook", cookDish: 0, cookStep: 0, stepMem: {} });
     genImages(0);
   };
 
   const setCookDish = (i: number) => {
-    setState({ cookDish: i, cookStep: 0 });
+    setState((s) => {
+      const stepMem = { ...s.stepMem, [s.cookDish]: s.cookStep };
+      return { cookDish: i, cookStep: stepMem[i] ?? 0, stepMem };
+    });
     genImages(i);
   };
 

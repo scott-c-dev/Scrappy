@@ -39,7 +39,7 @@ export async function checkAi(
   ai: AiSettings,
   listOnly = false,
 ): Promise<
-  | { ok: true; models: string[] | null; jsonMode?: "schema" | "object" }
+  | { ok: true; models: string[] | null; jsonMode?: "schema" | "object"; effortOk?: boolean }
   | { ok: false; reason: CheckFailure }
 > {
   try {

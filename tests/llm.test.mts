@@ -487,6 +487,46 @@ describe("check before saving (free: model list only)", () => {
   });
 });
 
+describe("reasoning effort, tested at Check & save", () => {
+  test("custom service with an effort: taken → effortOk; rejected → false, JSON mode still found", async () => {
+    fake.state.reply = { ok: true };
+    assert.equal((await post(check, { ai: custom({ effort: "medium" }) })).json.effortOk, true);
+    fake.state.mode = "noeffort";
+    const { json } = await post(check, { ai: custom({ effort: "medium" }) });
+    assert.equal(json.effortOk, false);
+    assert.equal(json.jsonMode, "schema", "the JSON-mode test runs without effort");
+  });
+
+  test("custom service on Auto: effort isn't tested", async () => {
+    fake.state.reply = { ok: true };
+    const { json } = await post(check, { ai: custom() });
+    assert.equal(json.effortOk, undefined);
+  });
+
+  test("Claude/OpenAI: a picked model is tested, the default isn't", async () => {
+    fake.state.mode = "noeffort";
+    fake.state.models = ["claude-haiku-5-5", "claude-haiku-4-5"];
+    fake.state.reply = { ok: true };
+    try {
+      assert.equal((await post(check, { ai: claude({ model: "claude-haiku-4-5" }) })).json.effortOk, false);
+      const from = fake.state.requests.length;
+      const def = await post(check, { ai: claude() });
+      assert.equal(def.json.effortOk, undefined);
+      assert.equal(fake.state.requests.length - from, 1, "default model: only the free model list");
+    } finally {
+      fake.state.models = ["claude-haiku-5-5", "gpt-6-luna", "vendor-model", "text-embedding-3-small"];
+    }
+  });
+
+  test("a picked model sends effort only once Check & save found it takes one", async () => {
+    fake.state.reply = { dishes: [DISH] };
+    await post(recipes, { ...RECIPE_BODY, ai: claude({ model: "claude-opus-5-5", effortOk: true }) });
+    assert.equal(lastRequest().body.output_config.effort, "medium");
+    await post(recipes, { ...RECIPE_BODY, ai: claude({ model: "claude-opus-5-5", effortOk: false }) });
+    assert.equal(lastRequest().body.output_config.effort, undefined);
+  });
+});
+
 describe("timeouts", () => {
   const slowCall = (format: "openai-chat" | "anthropic", timeout: number) => {
     const config = llmConfig(custom({ format, baseURL: format === "anthropic" ? fake.url : `${fake.url}/v1` }));

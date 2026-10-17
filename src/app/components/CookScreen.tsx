@@ -135,10 +135,25 @@ export function CookScreen({
         </div>
       )}
       <div className="flex-1" />
-      <StickyBar className="flex gap-10 pt-12 pb-14">
-        <SecondaryButton tone="solid" onClick={onPrev} className="px-18 py-14 text-15">
-          Back
-        </SecondaryButton>
+      <StickyBar className="flex pt-12 pb-14">
+        {/* Nothing to go back to on a dish's first step: Back slides away and
+            the main button widens into its place. */}
+        <div
+          aria-hidden={cookStep === 0}
+          className={cx(
+            "flex flex-none overflow-hidden transition-[max-width,opacity] duration-[240ms,180ms] ease-[cubic-bezier(.2,.7,.3,1),ease]",
+            cookStep > 0 ? "max-w-120 opacity-100" : "max-w-0 opacity-0",
+          )}
+        >
+          <SecondaryButton
+            tone="solid"
+            onClick={onPrev}
+            tabIndex={cookStep > 0 ? 0 : -1}
+            className="mr-10 px-18 py-14 text-15 whitespace-nowrap"
+          >
+            Back
+          </SecondaryButton>
+        </div>
         <PrimaryButton onClick={onNext} className="flex-1 p-14 text-16 shadow-raised">
           {nextLabel}
         </PrimaryButton>

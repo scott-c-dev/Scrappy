@@ -70,21 +70,32 @@ interface AiSetupScreenProps {
   fix?: CheckFailure | null;
   /* Opened to change the model (it's gone, or too slow): bring it into view. */
   focusModel?: boolean;
+  /* Opened to lower the reasoning effort: Advanced starts unfolded. */
+  openAdvanced?: boolean;
 }
 
 const EFFORTS: [AiEffort | null, string][] = [
-  [null, "Default"],
+  // Auto: send none, and let the service decide.
+  [null, "Auto"],
   ["low", "Low"],
   ["medium", "Medium"],
   ["high", "High"],
 ];
 
-export function AiSetupScreen({ saved, onSave, onRemove, onDone, fix, focusModel }: AiSetupScreenProps) {
+export function AiSetupScreen({
+  saved,
+  onSave,
+  onRemove,
+  onDone,
+  fix,
+  focusModel,
+  openAdvanced,
+}: AiSetupScreenProps) {
   const start = saved ? draftFromAi(saved) : blankDraft("claude");
   const { d, update, setKey, setProvider, runCheck, saveAnyway, valid, listable, modelIsDefault } =
     useAiDraft(fix ? { ...start, check: "fail", reason: fix } : start, { saved, onSaved: onSave });
   // Reasoning effort and JSON mode: experts only, so folded away by default.
-  const [advOpen, setAdvOpen] = useState(false);
+  const [advOpen, setAdvOpen] = useState(!!openAdvanced);
   const modelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (focusModel) modelRef.current?.scrollIntoView({ block: "center" });
@@ -93,6 +104,15 @@ export function AiSetupScreen({ saved, onSave, onRemove, onDone, fix, focusModel
   const custom = d.provider === "custom";
   const name = serviceName(d);
   const fail = d.check === "fail" && d.reason ? failCopy(d.reason, d) : null;
+  // What Check & save adjusted, in one line.
+  const autoNote =
+    d.jsonSwitched && d.effortSwitched
+      ? "This service doesn’t support Structured Outputs or a reasoning effort, so I switched on JSON mode and set reasoning effort to Auto."
+      : d.effortSwitched
+        ? "This service doesn’t take a reasoning effort, so I set it to Auto."
+        : d.jsonSwitched
+          ? "This service doesn’t support Structured Outputs, so I switched on JSON mode."
+          : null;
   const summary = `${PROVIDER_LABEL[d.provider]} · ${d.model.trim()}`;
 
   return (
@@ -265,7 +285,10 @@ export function AiSetupScreen({ saved, onSave, onRemove, onDone, fix, focusModel
             {advOpen && (
               <Card className="overflow-hidden">
                 <Row>
-                  <RowTitle title="Reasoning effort" caption="Only for models that support it" />
+                  <RowTitle
+                    title="Reasoning effort"
+                    caption="Low keeps recipes quick. If your service doesn't take it, Check & save sets it to Auto."
+                  />
                   <div className="flex flex-wrap gap-7">
                     {EFFORTS.map(([value, label]) => (
                       <Chip key={label} on={d.effort === value} onClick={() => update({ effort: value })} className="px-13 py-8 text-13">
@@ -335,10 +358,8 @@ export function AiSetupScreen({ saved, onSave, onRemove, onDone, fix, focusModel
             <div className="flex min-w-0 flex-col gap-2">
               <span className="text-14 font-bold text-ink">Connected</span>
               <span className="text-13 [overflow-wrap:anywhere] text-ink-soft">{summary}</span>
-              {d.jsonSwitched && (
-                <span className="text-13 leading-[1.45] text-pretty text-ink-soft">
-                  This service doesn&apos;t support Structured Outputs, so I switched on JSON mode.
-                </span>
+              {autoNote && (
+                <span className="text-13 leading-[1.45] text-pretty text-ink-soft">{autoNote}</span>
               )}
             </div>
           </div>

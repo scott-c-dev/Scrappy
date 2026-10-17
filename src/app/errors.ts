@@ -1,4 +1,4 @@
-import { modelOf, PROVIDER_LABEL, type AiFailure, type AiSettings } from "@/lib/ai";
+import { modelOf, PROVIDER_LABEL, type AiEffort, type AiFailure, type AiSettings } from "@/lib/ai";
 import type { PrefKey } from "@/lib/prefs";
 import type { CaptureFailure } from "@/lib/voice";
 import { hostOf } from "./components/aiDraft";
@@ -21,8 +21,9 @@ export type FailureKind = CaptureFailure | "nofood" | AiFailure;
    record: listen again · type: open the text box · pick: back to the pref
    options · resend: send the kept text again · edit: fix the kept text ·
    close · settings: open AI service · faster: open AI service at the model
-   picker · fewer: one dish fewer, then generate again · retry: generate
-   again · backToList: back to the confirm screen. */
+   picker · effort: open AI service at its Advanced section · fewer: one
+   dish fewer, then generate again · retry: generate again · backToList:
+   back to the confirm screen. */
 export type ErrorAction =
   | "record"
   | "type"
@@ -32,6 +33,7 @@ export type ErrorAction =
   | "close"
   | "settings"
   | "faster"
+  | "effort"
   | "fewer"
   | "retry"
   | "backToList";
@@ -63,18 +65,21 @@ export interface AiNames {
   /* Where an official service is topped up. */
   billing: string;
   model: string;
+  /* A custom service's reasoning effort (null = Auto). */
+  effort: AiEffort | null;
 }
 
 const BILLING = { claude: "platform.claude.com", openai: "platform.openai.com" };
 
 export function aiNames(ai: AiSettings | null | undefined): AiNames {
-  if (!ai) return { name: "your AI service", custom: false, billing: "", model: "" };
+  if (!ai) return { name: "your AI service", custom: false, billing: "", model: "", effort: null };
   const custom = ai.provider === "custom";
   return {
     name: custom ? hostOf(ai.baseURL) || "your AI service" : PROVIDER_LABEL[ai.provider],
     custom,
     billing: custom ? "" : BILLING[ai.provider as keyof typeof BILLING],
     model: modelOf(ai),
+    effort: custom ? ai.effort : null,
   };
 }
 
@@ -198,6 +203,9 @@ export function errorView(
           label: `Try ${courses - 1} ${courses - 1 === 1 ? "dish" : "dishes"} instead`,
           act: "fewer",
         });
+      // A high effort on a custom service can be what's slow.
+      if (ai.effort === "medium" || ai.effort === "high")
+        links.push({ label: "Try a lower reasoning effort", act: "effort" });
       links.push({ label: "Pick a faster model", act: "faster" });
       return view(
         "That took too long",

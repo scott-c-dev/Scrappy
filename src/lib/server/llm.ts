@@ -81,6 +81,7 @@ const SETTINGS = z.object({
   baseURL: z.string().max(1000),
   effort: z.enum(["low", "medium", "high"]).nullable(),
   jsonMode: z.boolean(),
+  effortOk: z.boolean().optional(),
 });
 
 /* Turns the settings sent from the device into a request config. */
@@ -99,10 +100,10 @@ export function llmConfig(input: unknown): LlmConfig {
       apiKey: key,
       baseURL: undefined,
       model: model ?? DEFAULT_MODEL[s.provider],
-      // Scrappy's own default model gets low for quick reading and medium
-      // for recipes. A model someone picked gets none: the pickers list
-      // older models too, and some reject the setting (Claude Haiku 4.5).
-      effort: model ? NO_EFFORT : { quick: "low", full: "medium" },
+      // Low for quick reading, medium for recipes — on Scrappy's own default
+      // model, or a picked one that Check & save found takes an effort. The
+      // pickers list older models too, and some reject it (Claude Haiku 4.5).
+      effort: !model || s.effortOk ? { quick: "low", full: "medium" } : NO_EFFORT,
       jsonMode: "schema",
     };
   }
@@ -116,7 +117,7 @@ export function llmConfig(input: unknown): LlmConfig {
     baseURL,
     model,
     // Choosing an effort says the service takes one: theirs for recipes,
-    // low for quick reading. Left on Default, nothing is ever sent — an
+    // low for quick reading. Left on Auto, nothing is ever sent — an
     // unknown service may reject the setting.
     effort: s.effort ? { quick: "low", full: s.effort } : NO_EFFORT,
     jsonMode: s.jsonMode ? "object" : "schema",
@@ -371,6 +372,9 @@ export async function probeJsonMode(config: LlmConfig): Promise<"schema" | "obje
     task: "quick" as const,
     timeout: 20_000,
   };
+  // Without effort: a service that rejects the effort setting mustn't look
+  // like one that rejects the JSON format (probeEffort checks that).
+  config = { ...config, effort: NO_EFFORT };
   const deadline = AbortSignal.timeout(req.timeout);
   try {
     await attempt({ ...config, jsonMode: "schema" }, req, deadline);
@@ -386,6 +390,40 @@ export async function probeJsonMode(config: LlmConfig): Promise<"schema" | "obje
     return "object";
   } catch (err) {
     console.warn(`[llm] JSON-mode probe couldn't tell: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+/* Whether the service takes a reasoning effort, found with one tiny request
+   at low when the settings are saved: true if it does, false if it rejects
+   the request with an effort but takes it without, null if we couldn't
+   tell. It can't tell a level that's accepted but slow. */
+export async function probeEffort(config: LlmConfig): Promise<boolean | null> {
+  const req = {
+    system: "You are a connection test.",
+    user: 'Reply with {"ok": true}.',
+    schema: z.object({ ok: z.boolean() }),
+    maxTokens: 1000,
+    task: "quick" as const,
+    timeout: 20_000,
+  };
+  const deadline = AbortSignal.timeout(req.timeout);
+  try {
+    await attempt({ ...config, effort: { quick: "low", full: "low" } }, req, deadline);
+    return true;
+  } catch (err) {
+    // A rejected parameter comes back as a 400/422, which is flagged as a
+    // format issue; anything else (slow, credit…) can't tell us anything.
+    if (!(err instanceof LlmError && err.formatIssue)) {
+      console.warn(`[llm] effort probe couldn't tell: ${err instanceof Error ? err.message : err}`);
+      return null;
+    }
+  }
+  try {
+    await attempt({ ...config, effort: NO_EFFORT }, req, deadline);
+    return false;
+  } catch (err) {
+    console.warn(`[llm] effort probe couldn't tell: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }

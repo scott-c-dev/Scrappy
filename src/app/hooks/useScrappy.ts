@@ -79,7 +79,7 @@ export interface ScrappyState {
   setupReturn: Screen;
   /* Opened from a failed request: what to show as wrong there, and whether
      to bring the model picker into view. */
-  setupFix: { reason: CheckFailure | null; model: boolean } | null;
+  setupFix: { reason: CheckFailure | null; model: boolean; advanced?: boolean } | null;
   /* The last AI request failed in a way fixed in Settings (or at the
      provider): the heads-up there. Cleared by the next one that works. */
   lastFail: FailureKind | null;
@@ -100,6 +100,9 @@ export interface ScrappyState {
   swapTargetId: string | null;
   cookDish: number;
   cookStep: number;
+  /* The step each dish was left on, so switching dishes picks up where
+     that dish was (dish index → step). */
+  stepMem: Record<number, number>;
   imgState: Record<string, "loading" | "ready" | "failed">;
   imgUrls: Record<string, string>;
   finaleUrl: string | null;
@@ -148,6 +151,7 @@ const INITIAL: ScrappyState = {
   swapTargetId: null,
   cookDish: 0,
   cookStep: 0,
+  stepMem: {},
   imgState: {},
   imgUrls: {},
   finaleUrl: null,
@@ -331,14 +335,15 @@ export function useScrappy() {
 
   // From a failed request: AI service opens showing what's wrong (or at the
   // model picker, for "pick a faster model"), and comes back here after.
-  const openAiFix = (kind: FailureKind | "faster") => {
+  const openAiFix = (kind: FailureKind | "faster" | "effort") => {
     closeVoice();
     setState((s) => ({
       screen: "aiSetup",
       setupReturn: s.screen,
       setupFix: {
-        reason: kind === "faster" ? null : (FIX_REASON[kind] ?? null),
+        reason: kind === "faster" || kind === "effort" ? null : (FIX_REASON[kind] ?? null),
         model: kind === "faster" || kind === "modelNotFound",
+        advanced: kind === "effort",
       },
       justConnected: false,
     }));
@@ -684,9 +689,10 @@ export function useScrappy() {
       }
       case "settings":
       case "faster":
+      case "effort":
         // What they said comes back in the text box once it's fixed.
         if (ctx && ctx !== "swap" && reviewText.trim()) resume.current = { ctx, text: reviewText };
-        return openAiFix(act === "faster" ? "faster" : (voiceError ?? "service"));
+        return openAiFix(act === "settings" ? (voiceError ?? "service") : act);
       case "close":
         return voiceCancel();
     }
@@ -769,7 +775,8 @@ export function useScrappy() {
       case "settings":
         return openAiFix(kind ?? "service");
       case "faster":
-        return openAiFix("faster");
+      case "effort":
+        return openAiFix(act);
       case "fewer": {
         const prefs = { ...stateRef.current.prefs };
         prefs.courses = Math.max(1, prefs.courses - 1);
@@ -860,12 +867,15 @@ export function useScrappy() {
   };
 
   const startCook = () => {
-    setState({ screen: "cook", cookDish: 0, cookStep: 0 });
+    setState({ screen: "cook", cookDish: 0, cookStep: 0, stepMem: {} });
     genImages(0);
   };
 
   const setCookDish = (i: number) => {
-    setState({ cookDish: i, cookStep: 0 });
+    setState((s) => {
+      const stepMem = { ...s.stepMem, [s.cookDish]: s.cookStep };
+      return { cookDish: i, cookStep: stepMem[i] ?? 0, stepMem };
+    });
     genImages(i);
   };
 

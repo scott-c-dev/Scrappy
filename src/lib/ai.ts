@@ -18,6 +18,9 @@ export interface AiSettings {
   /* Custom only; null = don't send any reasoning setting. */
   effort: AiEffort | null;
   jsonMode: boolean;
+  /* Claude or OpenAI with a model someone picked: whether Check & save found
+     it takes a reasoning effort (unset = not tested, so none is sent). */
+  effortOk?: boolean;
   /* Kept on this device (localStorage) or only until the tab closes. */
   remember: boolean;
 }

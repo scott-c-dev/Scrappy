@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
-import { modelOf, type AiSettings, type CheckFailure } from "@/lib/ai";
-import { chatModels, listModels, llmConfig, LlmError, probeJsonMode, type LlmFailureKind } from "@/lib/server/llm";
+import { DEFAULT_MODEL, modelOf, type AiSettings, type CheckFailure } from "@/lib/ai";
+import {
+  chatModels,
+  listModels,
+  llmConfig,
+  LlmError,
+  probeEffort,
+  probeJsonMode,
+  type LlmFailureKind,
+} from "@/lib/server/llm";
 import { mockAI, mockCheck, mockDelay } from "@/lib/server/mock";
 import { assertPublicUrl } from "@/lib/server/netguard";
 
@@ -11,11 +19,13 @@ export const maxDuration = 150;
 /* Checks AI settings before they're saved, and lists the models the key can
    use for the model picker. The check itself uses only the (free) model list;
    running out of credit shows up at first use instead. For a custom service
-   it also sends one tiny request to learn which JSON mode it needs — that
-   answer never fails the check.
+   it also sends one tiny request to learn which JSON mode it needs, and one
+   to learn whether it takes the reasoning effort chosen — as for a model
+   picked on Claude or OpenAI. Those answers never fail the check.
 
-   → { ok: true, models: string[] | null, jsonMode?: "schema" | "object" }
-       models null = the service has no list; no jsonMode = couldn't tell
+   → { ok: true, models: string[] | null, jsonMode?: "schema" | "object", effortOk?: boolean }
+       models null = the service has no list; no jsonMode / effortOk = couldn't
+       tell, or not tested
    → { ok: false, reason: CheckFailure } */
 
 const REASON: Record<LlmFailureKind, CheckFailure> = {
@@ -60,12 +70,21 @@ export async function POST(req: Request) {
     if (!body.listOnly && all && model && !all.includes(model)) {
       return NextResponse.json({ ok: false, reason: "modelNotFound" });
     }
-    const jsonMode =
-      !body.listOnly && ai?.provider === "custom" ? await probeJsonMode(config) : null;
+    const custom = ai?.provider === "custom";
+    const jsonMode = !body.listOnly && custom ? await probeJsonMode(config) : null;
+    // Effort is tested where Scrappy would send it: a custom service with one
+    // chosen, or a model picked on Claude or OpenAI (their defaults are known).
+    const picked =
+      !custom && !!ai?.provider && !!ai.model && ai.model !== DEFAULT_MODEL[ai.provider as "claude" | "openai"];
+    const testEffort = !body.listOnly && ((custom && !!ai?.effort) || picked);
+    const effortOk = testEffort
+      ? await probeEffort({ ...config, jsonMode: jsonMode ?? config.jsonMode })
+      : null;
     return NextResponse.json({
       ok: true,
       models: all && chatModels(all),
       ...(jsonMode && { jsonMode }),
+      ...(effortOk !== null && { effortOk }),
     });
   } catch (err) {
     const kind = err instanceof LlmError ? err.kind : "service";

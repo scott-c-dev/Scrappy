@@ -29,6 +29,8 @@ export interface Draft {
   reason: CheckFailure | null;
   /* The last check found the service needs plain JSON and turned it on. */
   jsonSwitched: boolean;
+  /* …and that it rejects the reasoning effort, so it's set to Auto. */
+  effortSwitched: boolean;
 }
 
 export function blankDraft(provider: AiProvider): Draft {
@@ -38,13 +40,16 @@ export function blankDraft(provider: AiProvider): Draft {
     model: provider === "custom" ? "" : DEFAULT_MODEL[provider],
     baseURL: "",
     format: "openai-chat",
-    effort: null,
+    // A custom service starts at Low: quick recipes, and Check & save sets
+    // it to Auto if the service doesn't take an effort.
+    effort: provider === "custom" ? "low" : null,
     jsonMode: false,
     remember: true,
     models: null,
     check: "idle",
     reason: null,
     jsonSwitched: false,
+    effortSwitched: false,
   };
 }
 
@@ -142,6 +147,7 @@ export function useAiDraft(
       check: prev.check === "checking" ? "checking" : "idle",
       reason: null,
       jsonSwitched: false,
+      effortSwitched: false,
     }));
 
   // A pasted key picks its service when the prefix says which: sk-ant- is
@@ -185,7 +191,7 @@ export function useAiDraft(
     if (d.check === "checking" || !draftValid(d)) return;
     let settings = toSettings(d);
     const my = ++run.current;
-    setD((prev) => ({ ...prev, check: "checking", reason: null, jsonSwitched: false }));
+    setD((prev) => ({ ...prev, check: "checking", reason: null, jsonSwitched: false, effortSwitched: false }));
     const res = await checkAi(settings);
     if (my !== run.current) return;
     if (res.ok) {
@@ -194,8 +200,19 @@ export function useAiDraft(
       // other way — someone who turned it on had a reason.
       const switchJson = res.jsonMode === "object" && !settings.jsonMode;
       if (switchJson) settings = { ...settings, jsonMode: true };
+      // A custom service that rejects the chosen effort goes to Auto, in view.
+      // On Claude or OpenAI nobody chose one, so the result is just kept.
+      const custom = settings.provider === "custom";
+      const switchEffort = custom && res.effortOk === false && !!settings.effort;
+      if (switchEffort) settings = { ...settings, effort: null };
+      if (!custom) settings = { ...settings, effortOk: res.effortOk };
       onSaved(settings);
-      setD((prev) => ({ ...prev, check: "ok", ...(switchJson && { jsonMode: true, jsonSwitched: true }) }));
+      setD((prev) => ({
+        ...prev,
+        check: "ok",
+        ...(switchJson && { jsonMode: true, jsonSwitched: true }),
+        ...(switchEffort && { effort: null, effortSwitched: true }),
+      }));
     } else {
       setD((prev) => ({ ...prev, check: "fail", reason: res.reason }));
     }

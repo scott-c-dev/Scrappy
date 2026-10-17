@@ -49,7 +49,7 @@ export function FinishSheet({
           The steps
         </SecondaryButton>
         <PrimaryButton onClick={onRestart} className="flex-1 p-14 text-16 shadow-raised">
-          Cook again
+          Done
         </PrimaryButton>
       </div>
     </Sheet>

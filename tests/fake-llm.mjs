@@ -10,7 +10,7 @@ export function startFakeLlm() {
   const state = {
     requests: [],
     /* ok | badjson | wrongshape | fenced | truncated | refusal | redirect
-       | 400 | 400credit | 401 | 402 | 404 | 429 | 429busy | models404 | noanswer | slow
+       | 400 | 400credit | 401 | 402 | 404 | 429 | 429busy | noeffort | models404 | noanswer | slow
        | schema400 | schema422 | schemaIgnored: how vendors without strict-schema
        output react to it (fine once the schema comes in the prompt instead) */
     mode: "ok",
@@ -49,6 +49,10 @@ export function startFakeLlm() {
       if (schemaAsked && mode === "schema400") return fail(400, "This response_format type is unavailable now");
       if (schemaAsked && mode === "schema422") {
         return send(422, { detail: [{ loc: ["body", "response_format"], msg: "Input should be 'text' or 'json_object'", type: "literal_error" }] });
+      }
+      // A service that rejects the reasoning-effort setting.
+      if (mode === "noeffort" && (body.reasoning_effort || body.output_config?.effort)) {
+        return fail(400, "Unrecognized request argument supplied: reasoning_effort");
       }
       // An error sent with a 200 and no answer in it.
       if (mode === "noanswer") return send(200, { error: { message: "Function is DEGRADED, try again later" } });

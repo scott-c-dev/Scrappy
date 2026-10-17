@@ -11,7 +11,8 @@
    generation hears no words, so MOCK_FAIL_RECIPES=<kind> or =slow sets how
    it goes. The AI key check answers too: a key containing "wrong",
    "nomodel" or "down" fails that way, "jsononly" connects but only with
-   JSON mode; anything else connects. The README's
+   JSON mode, "noeffort" connects but rejects a reasoning effort; anything
+   else connects. The README's
    "Mock mode" section lists all of these. */
 
 import "server-only";
@@ -61,9 +62,11 @@ export async function mockRecipeTrouble() {
 
 export function mockCheck(
   key: string,
-): { reason: CheckFailure } | { models: string[]; jsonMode?: "object" } {
+): { reason: CheckFailure } | { models: string[]; jsonMode?: "object"; effortOk?: boolean } {
   const k = key.toLowerCase();
-  if (k.includes("jsononly")) return { models: ["mock-model"], jsonMode: "object" };
+  const noEffort = k.includes("noeffort") ? { effortOk: false } : {};
+  if (k.includes("jsononly")) return { models: ["mock-model"], jsonMode: "object", ...noEffort };
+  if (k.includes("noeffort")) return { models: ["mock-model"], ...noEffort };
   if (k.includes("wrong")) return { reason: "wrongKey" };
   if (k.includes("nomodel")) return { reason: "modelNotFound" };
   if (k.includes("down")) return { reason: "unreachable" };

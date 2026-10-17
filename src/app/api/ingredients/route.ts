@@ -71,6 +71,7 @@ export async function POST(req: Request) {
       // eggs named twice) — deepseek-flash ran out at 2000. Kept under the
       // common 8K output cap; only what's used is billed.
       maxTokens: 6000,
+      task: "quick",
     });
 
     const tagFor = (f: string): FreshnessTag =>

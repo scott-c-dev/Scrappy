@@ -53,7 +53,7 @@ export async function POST(req: Request) {
       // Room for models that think before answering (deepseek-flash ran out
       // at 500 on "no nuts or shellfish please"). Only what's used is billed.
       maxTokens: 2000,
-      reasoning: false,
+      task: "quick",
     });
     // Coerce numeric prefs back to numbers.
     const numeric = key === "servings" || key === "courses";

@@ -33,6 +33,9 @@ describe("error copy", () => {
     assert.deepEqual(v.links.map((l) => [l.act, l.label]), [["fewer", "Try 2 dishes instead"], ["faster", "Pick a faster model"]]);
     assert.deepEqual(errorView("timeout", "gen", { ...opts, courses: 1 }, claude).links.map((l) => l.act), ["faster"]);
     assert.deepEqual(errorView("timeout", "input", opts, claude).links.map((l) => l.act), ["faster"]);
+    const slowCustom = { ...deepseek, effort: "high" as const };
+    assert.deepEqual(errorView("timeout", "gen", opts, slowCustom).links.map((l) => l.act), ["fewer", "effort", "faster"]);
+    assert.deepEqual(errorView("timeout", "gen", opts, { ...deepseek, effort: "low" as const }).links.map((l) => l.act), ["fewer", "faster"]);
   });
 
   test("credit: where to top up", () => {

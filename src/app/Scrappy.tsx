@@ -168,6 +168,7 @@ export default function Scrappy() {
               onDone={closeAiSetup}
               fix={s.setupFix?.reason}
               focusModel={s.setupFix?.model}
+              openAdvanced={s.setupFix?.advanced}
             />
           )}
           {s.screen === "confirm" && (

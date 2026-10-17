@@ -148,20 +148,27 @@ good default.
   the server to the service; the server never stores or logs it.
 - **Checked before saving:** listing the key's models (free) catches a wrong
   key, an unreachable address or a model the key can't use. For a custom
-  service, one tiny request also finds whether it takes
-  Structured Outputs; if not, JSON mode is switched on and the screen says so.
+  service, tiny requests also find whether it takes Structured Outputs (if
+  not, JSON mode is switched on) and the chosen reasoning effort (if not,
+  it's set to Auto), and the screen says so. A model picked on Claude or
+  OpenAI gets the effort test too, silently.
   Running out of credit shows up at first use, with its own message.
 - **Models:** Claude uses `claude-haiku-5-5` and OpenAI `gpt-6-luna` (reasoning
   `low`) unless you pick another. The default is saved as "Scrappy's default",
   so a newer default in the code reaches everyone who never picked a model.
 - **Other services (Custom):** any Claude-style or OpenAI-style (Chat
   Completions) API — DeepSeek, Groq, OpenRouter, vLLM… — with its address, key
-  and model. Under **Advanced**: reasoning effort, and JSON mode for services
-  without Structured Outputs (set for you when you save; a request rejected
-  in Structured Outputs mode is also retried once in JSON mode). Every reply
+  and model. Under **Advanced**: reasoning effort (Low by default; Auto sends
+  none and lets the service decide), and JSON mode for services without
+  Structured Outputs (set for you when you save; a request rejected in
+  Structured Outputs mode is also retried once in JSON mode). Every reply
   is checked against the schema.
+- **Reasoning effort per task:** reading your list or a preference uses low;
+  recipes use medium on Scrappy's default models, or the effort you chose
+  on a custom service. Nothing is sent to a service that hasn't shown it
+  takes one.
 - **When a request fails,** the message says whose side it's on and what
-  helps: try again, wait a minute (too busy), fewer dishes or a faster model
+  helps: try again, wait a minute (too busy), fewer dishes, a lower reasoning effort or a faster model
   (no answer within 2 minutes), or "Open AI settings" (key refused, model gone,
   a custom address not answering) — then back where you were, with what you
   said kept. Settings shows the last such failure until a request works.
@@ -239,6 +246,7 @@ work on the UI, or try the whole flow, without credit.
 | Key check: can't reach | A key containing `down` |
 | Key check: private address | Custom, with an address like `http://192.168.1.20:11434/v1` |
 | Key check: "switched on JSON mode" | Custom, with a key containing `jsononly` |
+| Key check: "set it to Auto" | Custom with an effort chosen, and a key containing `noeffort` (both lines: `jsononly-noeffort`) |
 | Key switched by its prefix | Paste a key starting `sk-proj-` (OpenAI) or `sk-ant-` (Claude) |
 | "Out of credit" | Say or type "out of credit" as your list, as a preference, or as a swap's "what should change" |
 | "Your AI's swamped" | Say or type "too busy" (same places) |

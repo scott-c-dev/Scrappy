@@ -10,6 +10,7 @@
    token, which the provided key isn't permissioned to mint. */
 
 import { transcribe } from "./api";
+import { voiceDebug } from "./voiceDebug";
 
 /* Deepgram fallback is switched off for now: browsers without the Web Speech
    API get a mic error instead of the server round trip. Flip to re-enable. */
@@ -66,11 +67,29 @@ function getSpeechRecognition(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+// Numbers recognizer instances in the debug log, so runs can be told apart.
+let recCount = 0;
+
 function startWebSpeech(
   Recognition: SpeechRecognitionCtor,
   h: Handlers,
 ): VoiceSession {
   const rec = new Recognition();
+  const id = ++recCount;
+  // TODO: temporary — remove with voiceDebug.ts.
+  const log = (msg: string, isError = false) => voiceDebug(`#${id} ${msg}`, isError);
+  for (const ev of [
+    "start",
+    "audiostart",
+    "soundstart",
+    "speechstart",
+    "speechend",
+    "soundend",
+    "audioend",
+    "nomatch",
+  ] as const) {
+    rec.addEventListener(ev, () => log(ev));
+  }
   rec.lang = navigator.language || "en-US";
   rec.continuous = true;
   rec.interimResults = true;
@@ -85,10 +104,12 @@ function startWebSpeech(
 
   rec.onresult = (e) => {
     current = mergeResults(e.results);
+    log(`result: ${current}`);
     h.onPartial?.(joinText(committed, current));
   };
 
   rec.onerror = (e) => {
+    log(`error: ${e.error}`, true);
     // "no-speech" just means silence; let onend resolve with an empty transcript.
     if (e.error === "no-speech" || e.error === "aborted") return;
     failed = true;
@@ -99,29 +120,39 @@ function startWebSpeech(
   };
 
   rec.onend = () => {
+    log(`end (stopped=${stopped} cancelled=${cancelled} failed=${failed})`);
     if (cancelled || failed) return;
     // Browsers end continuous sessions on their own after a pause; keep
     // listening until the user taps Done.
     if (!stopped) {
       committed = joinText(committed, current);
       current = "";
+      log("restart");
       rec.start();
       return;
     }
     h.onFinal(joinText(committed, current));
   };
 
+  log("start()");
   rec.start();
 
   return {
     stop() {
       if (stopped) return;
       stopped = true;
+      log("stop()");
       rec.stop();
     },
     cancel() {
+      if (cancelled) return;
       cancelled = true;
-      rec.abort();
+      log("cancel() → stop()");
+      // Not abort(): on iOS, aborting a recognizer appears to leave WebKit's
+      // speech service wedged — every later recognizer starts but never
+      // hears anything until the app is relaunched (issue #9). stop() ends it the
+      // same way "That's everything" does; `cancelled` drops the transcript.
+      rec.stop();
     },
   };
 }

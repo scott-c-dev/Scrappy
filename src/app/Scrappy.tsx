@@ -1,6 +1,7 @@
 "use client";
 
 import { cx } from "@/lib/cx";
+import { voiceDebugTap } from "@/lib/voiceDebug";
 import { useScrappy } from "./hooks/useScrappy";
 import { InputScreen } from "./components/InputScreen";
 import { ConfirmScreen } from "./components/ConfirmScreen";
@@ -108,7 +109,8 @@ export default function Scrappy() {
                 ‹
               </HeaderButton>
             )}
-            <span className="font-display text-20 font-extrabold text-ink">
+            {/* TODO: temporary — 5 taps toggle the voice debug log (voiceDebug.ts). */}
+            <span onClick={voiceDebugTap} className="font-display text-20 font-extrabold text-ink">
               {s.screen === "settings" ? "Settings" : s.screen === "aiSetup" ? "AI service" : "Scrappy"}
             </span>
           </div>

@@ -224,19 +224,22 @@ export async function generateJson<T extends z.ZodType>(
   const budget = req.timeout ?? DEADLINE_MS;
   const started = Date.now();
   const deadline = AbortSignal.timeout(budget);
-  // Invalid JSON is usually a one-off, so it gets one more try — but only if
-  // there's time for it. Taking as long as the first try would run past the
-  // deadline, and the user would see "too long" instead of the real cause.
+  // Before trying again after an attempt that took `took` ms: if a retry as
+  // slow as that one wouldn't fit before the deadline, skip it, so the user
+  // sees the real cause instead of "too long".
+  const timeFor = (took: number, what: string) => {
+    const left = budget - (Date.now() - started);
+    const ok = left >= took;
+    console.warn(`[llm] ${what} after ${took} ms, ${ok ? "retrying" : "not retrying"} (${left} ms left)`);
+    return ok;
+  };
+  // Invalid JSON is usually a one-off, so it gets one more try.
   const objectAttempt = async (objectConfig: LlmConfig) => {
     const tried = Date.now();
     try {
       return await attempt(objectConfig, req, deadline);
     } catch (err) {
-      if (!(err instanceof InvalidJsonError)) throw err;
-      const took = Date.now() - tried;
-      const left = budget - (Date.now() - started);
-      if (left < took) throw err;
-      console.warn(`[llm] invalid JSON after ${took} ms, retrying once (${left} ms left)`);
+      if (!(err instanceof InvalidJsonError) || !timeFor(Date.now() - tried, "invalid JSON")) throw err;
       return attempt(objectConfig, req, deadline);
     }
   };
@@ -248,8 +251,12 @@ export async function generateJson<T extends z.ZodType>(
     // same way: DeepSeek answers 400, FastAPI-style servers 422, some ignore
     // it and send JSON of their own shape. Object mode puts the schema in the
     // prompt instead, which they all understand, so try that once.
-    if (config.jsonMode === "schema" && err instanceof LlmError && err.formatIssue) {
-      console.warn(`[llm] schema mode failed (${err.message}), retrying in object mode`);
+    if (
+      config.jsonMode === "schema" &&
+      err instanceof LlmError &&
+      err.formatIssue &&
+      timeFor(Date.now() - started, `schema mode failed (${err.message})`)
+    ) {
       return objectAttempt({ ...config, jsonMode: "object" });
     }
     throw err;

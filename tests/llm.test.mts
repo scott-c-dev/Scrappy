@@ -594,12 +594,31 @@ describe("invalid object-mode JSON", () => {
 
   test("no retry when the time left is less than the first attempt took", async () => {
     const config = llmConfig(custom({ jsonMode: true }));
-    const req = { system: "s", user: "u", schema: z.object({ ok: z.boolean() }), maxTokens: 10, timeout: 500 };
+    const req = { system: "s", user: "u", schema: z.object({ ok: z.boolean() }), maxTokens: 10, timeout: 700 };
     fake.state.reply = { ok: true };
-    // ~300 ms for the first reply leaves ~200 ms: not enough for another.
+    // ~400 ms for the first reply leaves ~300 ms: not enough for another.
     fake.state.script = ["slowbadjson"];
     await assert.rejects(generateJson(config, req), (e: LlmError) => e.kind === "service" && /valid JSON/.test(e.message));
     assert.equal(fake.state.requests.length, 1);
+  });
+
+  test("a slow first attempt is still retried when there's time", async () => {
+    const config = llmConfig(custom({ jsonMode: true }));
+    const req = { system: "s", user: "u", schema: z.object({ ok: z.boolean() }), maxTokens: 10, timeout: 2000 };
+    fake.state.reply = { ok: true };
+    fake.state.script = ["slowbadjson"];
+    assert.deepEqual(await generateJson(config, req), { ok: true });
+    assert.equal(fake.state.requests.length, 2);
+  });
+
+  test("no object-mode fallback after a slow schema attempt without time for it", async () => {
+    const config = llmConfig(custom());
+    const req = { system: "s", user: "u", schema: z.object({ ok: z.boolean() }), maxTokens: 10, timeout: 700 };
+    fake.state.reply = { ok: true };
+    fake.state.script = ["slowbadjson"];
+    await assert.rejects(generateJson(config, req), (e: LlmError) => e.kind === "service" && /valid JSON/.test(e.message));
+    assert.equal(fake.state.requests.length, 1);
+    assert.ok(lastRequest().body.response_format || lastRequest().body.output_config);
   });
 });
 

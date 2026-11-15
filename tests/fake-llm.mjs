@@ -13,9 +13,11 @@ export function startFakeLlm() {
        | 400 | 400credit | 401 | 402 | 404 | 429 | 429busy | noeffort | models404 | noanswer | slow
        | schema400 | schema422 | schemaIgnored: how vendors without strict-schema
        output react to it (fine once the schema comes in the prompt instead)
-       | slowbadjson: invalid JSON, sent after 300 ms */
+       | slowbadjson: invalid JSON, sent after 400 ms */
     mode: "ok",
-    /* Modes for the next requests, one each, in order; `mode` once it runs out. */
+    /* Modes for the next HTTP requests, one each, in order; `mode` once it
+       runs out. Per HTTP request, not per call: the SDKs retry a 429 or a
+       dropped connection on their own, and that retry takes the next entry. */
     script: [],
     reply: {},
     models: MODELS,
@@ -26,17 +28,17 @@ export function startFakeLlm() {
     req.on("end", () => {
       const body = JSON.parse(raw || "{}");
       state.requests.push({ method: req.method, path: req.url, headers: req.headers, body });
+      const mode = state.script.length ? state.script.shift() : state.mode;
       const send = (code, obj) => {
         const go = () => {
           res.writeHead(code, { "content-type": "application/json" });
           res.end(JSON.stringify(obj));
         };
-        if (mode === "slowbadjson") setTimeout(go, 300);
+        if (mode === "slowbadjson") setTimeout(go, 400);
         else go();
       };
       const fail = (code, message) =>
         send(code, { type: "error", error: { type: "error", message, code: code === 429 ? "insufficient_quota" : null } });
-      const mode = state.script.length ? state.script.shift() : state.mode;
       if (mode === "redirect") {
         res.writeHead(302, { location: "http://127.0.0.1:9/" });
         return res.end();

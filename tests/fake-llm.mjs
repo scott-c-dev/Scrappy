@@ -14,6 +14,8 @@ export function startFakeLlm() {
        | schema400 | schema422 | schemaIgnored: how vendors without strict-schema
        output react to it (fine once the schema comes in the prompt instead) */
     mode: "ok",
+    /* Modes for the next requests, one each, in order; `mode` once it runs out. */
+    script: [],
     reply: {},
     models: MODELS,
   };
@@ -29,7 +31,7 @@ export function startFakeLlm() {
       };
       const fail = (code, message) =>
         send(code, { type: "error", error: { type: "error", message, code: code === 429 ? "insufficient_quota" : null } });
-      const { mode } = state;
+      const mode = state.script.length ? state.script.shift() : state.mode;
       if (mode === "redirect") {
         res.writeHead(302, { location: "http://127.0.0.1:9/" });
         return res.end();
@@ -42,11 +44,11 @@ export function startFakeLlm() {
       if (mode === "400") return fail(400, "unsupported parameter");
       if (mode === "404") return fail(404, "model not found");
       // Answers long after any test's timeout.
-      if (mode === "slow" || (mode === "badjson-then-slow" && state.requests.length > 1)) return void setTimeout(() => send(200, {}), 2000);
+      if (mode === "slow") return void setTimeout(() => send(200, {}), 2000);
 
       // A strict-schema request: OpenAI's response_format, or Anthropic's output_config.format.
       const schemaAsked = body.response_format?.type === "json_schema" || !!body.output_config?.format;
-      if (schemaAsked && (mode === "schema400" || mode === "schema400-badjson-once")) return fail(400, "This response_format type is unavailable now");
+      if (schemaAsked && mode === "schema400") return fail(400, "This response_format type is unavailable now");
       if (schemaAsked && mode === "schema422") {
         return send(422, { detail: [{ loc: ["body", "response_format"], msg: "Input should be 'text' or 'json_object'", type: "literal_error" }] });
       }
@@ -69,8 +71,7 @@ export function startFakeLlm() {
       }
 
       let text = JSON.stringify(state.reply);
-      if (mode === "badjson" || (mode === "badjson-then-slow" && state.requests.length === 1) || (mode === "badjson-once" && state.requests.length === 1) ||
-          (mode === "schema400-badjson-once" && state.requests.length === 2)) text = "Sure! Here you go: {not json";
+      if (mode === "badjson") text = "Sure! Here you go: {not json";
       if (mode === "wrongshape" || (schemaAsked && mode === "schemaIgnored")) text = JSON.stringify({ something: "else" });
       if (mode === "fenced") text = "```json\n" + text + "\n```";
 

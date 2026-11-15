@@ -64,6 +64,12 @@ export class LlmError extends Error {
   }
 }
 
+class InvalidJsonError extends LlmError {
+  constructor() {
+    super("service", "the model's reply wasn't valid JSON", { formatIssue: true });
+  }
+}
+
 /* A short excerpt of what a vendor sent, for the log: its error message when
    the body has one, else the start of the body. */
 function vendorText(body: unknown): string {
@@ -216,6 +222,15 @@ export async function generateJson<T extends z.ZodType>(
   // user one wait, not one per retry — and stays inside the route's
   // maxDuration on Vercel.
   const deadline = AbortSignal.timeout(req.timeout ?? DEADLINE_MS);
+  const objectAttempt = async (objectConfig: LlmConfig) => {
+    try {
+      return await attempt(objectConfig, req, deadline);
+    } catch (err) {
+      if (!(err instanceof InvalidJsonError)) throw err;
+      return attempt(objectConfig, req, deadline);
+    }
+  };
+  if (config.jsonMode === "object") return objectAttempt(config);
   try {
     return await attempt(config, req, deadline);
   } catch (err) {
@@ -225,7 +240,7 @@ export async function generateJson<T extends z.ZodType>(
     // prompt instead, which they all understand, so try that once.
     if (config.jsonMode === "schema" && err instanceof LlmError && err.formatIssue) {
       console.warn(`[llm] schema mode failed (${err.message}), retrying in object mode`);
-      return attempt({ ...config, jsonMode: "object" }, req, deadline);
+      return objectAttempt({ ...config, jsonMode: "object" });
     }
     throw err;
   }
@@ -258,7 +273,7 @@ async function attempt<T extends z.ZodType>(
     data = JSON.parse(extractJson(text));
   } catch {
     console.error(`[llm] reply wasn't valid JSON (${text.length} chars): ${text.slice(0, 200)}…${text.slice(-120)}`);
-    throw new LlmError("service", "the model's reply wasn't valid JSON", { formatIssue: true });
+    throw new InvalidJsonError();
   }
   const parsed = req.schema.safeParse(dropNulls(data));
   if (!parsed.success) {

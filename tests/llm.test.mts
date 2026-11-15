@@ -194,12 +194,12 @@ describe("vendors without strict-schema output", () => {
     assert.match(lastRequest().body.system, /JSON Schema/);
   });
 
-  test("object mode chosen in settings: no second request", async () => {
+  test("object mode chosen in settings: invalid JSON is retried only once", async () => {
     fake.state.mode = "badjson";
     const from = fake.state.requests.length;
     const { status } = await post(ingredients, { transcript: "cabbage", ai: custom({ jsonMode: true }) });
     assert.equal(status, 502);
-    assert.equal(fake.state.requests.length - from, 1);
+    assert.equal(fake.state.requests.length - from, 2);
   });
 
   test("no object-mode retry for a key, credit or model problem", async () => {
@@ -549,6 +549,46 @@ describe("timeouts", () => {
       assert.equal(fake.state.requests.length - from, 1, `${format}: sent once`);
       assert.ok(Date.now() - started < 1500, `${format}: stopped at the deadline`);
     }
+  });
+});
+
+describe("invalid object-mode JSON", () => {
+  test("retries once within the same request for both API formats", async () => {
+    for (const format of ["openai-chat", "anthropic"] as const) {
+      fake.state.requests.length = 0;
+      fake.state.mode = "badjson-once";
+      fake.state.reply = { ok: true };
+      const config = llmConfig(custom({ format, jsonMode: true, baseURL: format === "anthropic" ? fake.url : `${fake.url}/v1` }));
+      assert.deepEqual(await generateJson(config, { system: "s", user: "u", schema: z.object({ ok: z.boolean() }), maxTokens: 10 }), { ok: true });
+      assert.equal(fake.state.requests.length, 2);
+    }
+  });
+
+  test("retries invalid JSON after schema fallback, but does not loop", async () => {
+    fake.state.mode = "schema400-badjson-once";
+    fake.state.reply = { ok: true };
+    const config = llmConfig(custom());
+    const req = { system: "s", user: "u", schema: z.object({ ok: z.boolean() }), maxTokens: 10 };
+    assert.deepEqual(await generateJson(config, req), { ok: true });
+    assert.equal(fake.state.requests.length, 3);
+    fake.state.requests.length = 0;
+    fake.state.mode = "badjson";
+    await assert.rejects(generateJson({ ...config, jsonMode: "object" }, req), (e: LlmError) => e.kind === "service");
+    assert.equal(fake.state.requests.length, 2);
+  });
+
+  test("does not retry other errors and preserves the shared deadline", async () => {
+    const config = llmConfig(custom({ jsonMode: true }));
+    const req = { system: "s", user: "u", schema: z.object({ ok: z.boolean() }), maxTokens: 10, timeout: 250 };
+    fake.state.mode = "wrongshape";
+    await assert.rejects(generateJson(config, req), (e: LlmError) => e.kind === "service");
+    assert.equal(fake.state.requests.length, 1);
+    fake.state.requests.length = 0;
+    fake.state.mode = "badjson-then-slow";
+    const started = Date.now();
+    await assert.rejects(generateJson(config, req), (e: LlmError) => e.kind === "timeout");
+    assert.equal(fake.state.requests.length, 2);
+    assert.ok(Date.now() - started < 1500);
   });
 });
 

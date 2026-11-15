@@ -227,10 +227,10 @@ export async function generateJson<T extends z.ZodType>(
   // Before trying again after an attempt that took `took` ms: if a retry as
   // slow as that one wouldn't fit before the deadline, skip it, so the user
   // sees the real cause instead of "too long".
-  const timeFor = (took: number, what: string) => {
+  const timeFor = (took: number, what: string, retry = "retrying") => {
     const left = budget - (Date.now() - started);
     const ok = left >= took;
-    console.warn(`[llm] ${what} after ${took} ms, ${ok ? "retrying" : "not retrying"} (${left} ms left)`);
+    console.warn(`[llm] ${what} after ${took} ms, ${ok ? retry : "not retrying"} (${left} ms left)`);
     return ok;
   };
   // Invalid JSON is usually a one-off, so it gets one more try.
@@ -255,7 +255,7 @@ export async function generateJson<T extends z.ZodType>(
       config.jsonMode === "schema" &&
       err instanceof LlmError &&
       err.formatIssue &&
-      timeFor(Date.now() - started, `schema mode failed (${err.message})`)
+      timeFor(Date.now() - started, `schema mode failed (${err.message})`, "retrying in object mode")
     ) {
       return objectAttempt({ ...config, jsonMode: "object" });
     }

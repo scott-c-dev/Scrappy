@@ -12,8 +12,13 @@ export function startFakeLlm() {
     /* ok | badjson | wrongshape | fenced | truncated | refusal | redirect
        | 400 | 400credit | 401 | 402 | 404 | 429 | 429busy | noeffort | models404 | noanswer | slow
        | schema400 | schema422 | schemaIgnored: how vendors without strict-schema
-       output react to it (fine once the schema comes in the prompt instead) */
+       output react to it (fine once the schema comes in the prompt instead)
+       | slowbadjson: invalid JSON, sent after 400 ms */
     mode: "ok",
+    /* Modes for the next HTTP requests, one each, in order; `mode` once it
+       runs out. Per HTTP request, not per call: the SDKs retry a 429 or a
+       dropped connection on their own, and that retry takes the next entry. */
+    script: [],
     reply: {},
     models: MODELS,
   };
@@ -23,13 +28,17 @@ export function startFakeLlm() {
     req.on("end", () => {
       const body = JSON.parse(raw || "{}");
       state.requests.push({ method: req.method, path: req.url, headers: req.headers, body });
+      const mode = state.script.length ? state.script.shift() : state.mode;
       const send = (code, obj) => {
-        res.writeHead(code, { "content-type": "application/json" });
-        res.end(JSON.stringify(obj));
+        const go = () => {
+          res.writeHead(code, { "content-type": "application/json" });
+          res.end(JSON.stringify(obj));
+        };
+        if (mode === "slowbadjson") setTimeout(go, 400);
+        else go();
       };
       const fail = (code, message) =>
         send(code, { type: "error", error: { type: "error", message, code: code === 429 ? "insufficient_quota" : null } });
-      const { mode } = state;
       if (mode === "redirect") {
         res.writeHead(302, { location: "http://127.0.0.1:9/" });
         return res.end();
@@ -42,11 +51,11 @@ export function startFakeLlm() {
       if (mode === "400") return fail(400, "unsupported parameter");
       if (mode === "404") return fail(404, "model not found");
       // Answers long after any test's timeout.
-      if (mode === "slow" || (mode === "badjson-then-slow" && state.requests.length > 1)) return void setTimeout(() => send(200, {}), 2000);
+      if (mode === "slow") return void setTimeout(() => send(200, {}), 2000);
 
       // A strict-schema request: OpenAI's response_format, or Anthropic's output_config.format.
       const schemaAsked = body.response_format?.type === "json_schema" || !!body.output_config?.format;
-      if (schemaAsked && (mode === "schema400" || mode === "schema400-badjson-once")) return fail(400, "This response_format type is unavailable now");
+      if (schemaAsked && mode === "schema400") return fail(400, "This response_format type is unavailable now");
       if (schemaAsked && mode === "schema422") {
         return send(422, { detail: [{ loc: ["body", "response_format"], msg: "Input should be 'text' or 'json_object'", type: "literal_error" }] });
       }
@@ -69,8 +78,7 @@ export function startFakeLlm() {
       }
 
       let text = JSON.stringify(state.reply);
-      if (mode === "badjson" || (mode === "badjson-then-slow" && state.requests.length === 1) || (mode === "badjson-once" && state.requests.length === 1) ||
-          (mode === "schema400-badjson-once" && state.requests.length === 2)) text = "Sure! Here you go: {not json";
+      if (mode === "badjson" || mode === "slowbadjson") text = "Sure! Here you go: {not json";
       if (mode === "wrongshape" || (schemaAsked && mode === "schemaIgnored")) text = JSON.stringify({ something: "else" });
       if (mode === "fenced") text = "```json\n" + text + "\n```";
 

@@ -221,12 +221,22 @@ export async function generateJson<T extends z.ZodType>(
   // cancel, so when it passes, the whole call stops: a slow model costs the
   // user one wait, not one per retry — and stays inside the route's
   // maxDuration on Vercel.
-  const deadline = AbortSignal.timeout(req.timeout ?? DEADLINE_MS);
+  const budget = req.timeout ?? DEADLINE_MS;
+  const started = Date.now();
+  const deadline = AbortSignal.timeout(budget);
+  // Invalid JSON is usually a one-off, so it gets one more try — but only if
+  // there's time for it. Taking as long as the first try would run past the
+  // deadline, and the user would see "too long" instead of the real cause.
   const objectAttempt = async (objectConfig: LlmConfig) => {
+    const tried = Date.now();
     try {
       return await attempt(objectConfig, req, deadline);
     } catch (err) {
       if (!(err instanceof InvalidJsonError)) throw err;
+      const took = Date.now() - tried;
+      const left = budget - (Date.now() - started);
+      if (left < took) throw err;
+      console.warn(`[llm] invalid JSON after ${took} ms, retrying once (${left} ms left)`);
       return attempt(objectConfig, req, deadline);
     }
   };

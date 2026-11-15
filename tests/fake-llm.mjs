@@ -12,7 +12,8 @@ export function startFakeLlm() {
     /* ok | badjson | wrongshape | fenced | truncated | refusal | redirect
        | 400 | 400credit | 401 | 402 | 404 | 429 | 429busy | noeffort | models404 | noanswer | slow
        | schema400 | schema422 | schemaIgnored: how vendors without strict-schema
-       output react to it (fine once the schema comes in the prompt instead) */
+       output react to it (fine once the schema comes in the prompt instead)
+       | slowbadjson: invalid JSON, sent after 300 ms */
     mode: "ok",
     /* Modes for the next requests, one each, in order; `mode` once it runs out. */
     script: [],
@@ -26,8 +27,12 @@ export function startFakeLlm() {
       const body = JSON.parse(raw || "{}");
       state.requests.push({ method: req.method, path: req.url, headers: req.headers, body });
       const send = (code, obj) => {
-        res.writeHead(code, { "content-type": "application/json" });
-        res.end(JSON.stringify(obj));
+        const go = () => {
+          res.writeHead(code, { "content-type": "application/json" });
+          res.end(JSON.stringify(obj));
+        };
+        if (mode === "slowbadjson") setTimeout(go, 300);
+        else go();
       };
       const fail = (code, message) =>
         send(code, { type: "error", error: { type: "error", message, code: code === 429 ? "insufficient_quota" : null } });
@@ -71,7 +76,7 @@ export function startFakeLlm() {
       }
 
       let text = JSON.stringify(state.reply);
-      if (mode === "badjson") text = "Sure! Here you go: {not json";
+      if (mode === "badjson" || mode === "slowbadjson") text = "Sure! Here you go: {not json";
       if (mode === "wrongshape" || (schemaAsked && mode === "schemaIgnored")) text = JSON.stringify({ something: "else" });
       if (mode === "fenced") text = "```json\n" + text + "\n```";
 

@@ -591,6 +591,16 @@ describe("invalid object-mode JSON", () => {
     assert.equal(fake.state.requests.length, 2);
     assert.ok(Date.now() - started < 1500);
   });
+
+  test("no retry when the time left is less than the first attempt took", async () => {
+    const config = llmConfig(custom({ jsonMode: true }));
+    const req = { system: "s", user: "u", schema: z.object({ ok: z.boolean() }), maxTokens: 10, timeout: 500 };
+    fake.state.reply = { ok: true };
+    // ~300 ms for the first reply leaves ~200 ms: not enough for another.
+    fake.state.script = ["slowbadjson"];
+    await assert.rejects(generateJson(config, req), (e: LlmError) => e.kind === "service" && /valid JSON/.test(e.message));
+    assert.equal(fake.state.requests.length, 1);
+  });
 });
 
 describe("private addresses", () => {

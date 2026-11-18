@@ -58,44 +58,71 @@ export async function startVoiceCapture(h: Handlers): Promise<VoiceSession> {
 
 type SpeechRecognitionCtor = new () => SpeechRecognition;
 
-function getSpeechRecognition(): SpeechRecognitionCtor | null {
+function getSpeechRecognition(win: Window = window): SpeechRecognitionCtor | null {
   // @types/dom-speech-recognition declares both globals as always present,
   // but either (or both) may be missing at runtime.
-  const w = window as Partial<
+  const w = win as Partial<
     Pick<typeof window, "SpeechRecognition" | "webkitSpeechRecognition">
   >;
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-/* One recognizer for the whole page, reused by every voice turn.
+/* A fresh recognizer for every turn, made inside a new hidden iframe.
 
-   iOS Safari gives a second SpeechRecognition object on the same page a
-   silent microphone: it fires start and audiostart, then never hears a word,
-   until the page is reloaded (issue #9). Restarting the same object works
-   (we already do that mid-turn), so every turn shares this one. */
-let shared: SpeechRecognition | null = null;
-// The turn whose start() the shared recognizer is serving; its events go to it.
-let owner: Run | null = null;
-// A newer turn waiting for the previous one's `end` before it can start().
-let pending: Run | null = null;
-
-interface Run {
-  id: number;
-  start(): void;
-  onResult(e: SpeechRecognitionEvent): void;
-  onError(e: SpeechRecognitionErrorEvent): void;
-  onEnd(): void;
+   On iOS only the first speech recognition after a page load hears
+   anything: later ones — new objects or the same one restarted, with or
+   without an open getUserMedia stream — fire start and audiostart, then get
+   no words until the page reloads (issue #9). Each iframe is a new document,
+   so each turn gets the state a freshly loaded page would. */
+function freshRecognizer(
+  fallback: SpeechRecognitionCtor,
+  log: (msg: string, isError?: boolean) => void,
+): { rec: SpeechRecognition; dispose(): void } {
+  const frame = document.createElement("iframe");
+  frame.setAttribute("allow", "microphone");
+  frame.setAttribute("aria-hidden", "true");
+  frame.tabIndex = -1;
+  frame.style.cssText =
+    "position:fixed;width:0;height:0;border:0;opacity:0;pointer-events:none;";
+  document.body.appendChild(frame);
+  const Ctor = frame.contentWindow
+    ? getSpeechRecognition(frame.contentWindow)
+    : null;
+  if (!Ctor) {
+    frame.remove();
+    log("no recognizer in iframe; using the page's");
+    return { rec: new fallback(), dispose() {} };
+  }
+  log("recognizer from a fresh iframe");
+  return { rec: new Ctor(), dispose: () => frame.remove() };
 }
+
+// The previous turn's iframe, removed when the next turn starts if its
+// recognizer never reported `end`.
+let disposeLast: (() => void) | null = null;
 
 // Numbers voice turns in the debug log, so they can be told apart.
 let runCount = 0;
 
-function sharedRecognizer(Recognition: SpeechRecognitionCtor): SpeechRecognition {
-  if (shared) return shared;
-  const rec = new Recognition();
-  rec.continuous = true;
-  rec.interimResults = true;
+function startWebSpeech(
+  Recognition: SpeechRecognitionCtor,
+  h: Handlers,
+): VoiceSession {
+  const id = ++runCount;
   // TODO: temporary — remove with voiceDebug.ts.
+  const log = (msg: string, isError = false) => voiceDebug(`#${id} ${msg}`, isError);
+
+  disposeLast?.();
+  const { rec, dispose } = freshRecognizer(Recognition, log);
+  let disposed = false;
+  const release = () => {
+    if (disposed) return;
+    disposed = true;
+    if (disposeLast === release) disposeLast = null;
+    dispose();
+  };
+  disposeLast = release;
+
   for (const ev of [
     "start",
     "audiostart",
@@ -106,63 +133,11 @@ function sharedRecognizer(Recognition: SpeechRecognitionCtor): SpeechRecognition
     "audioend",
     "nomatch",
   ] as const) {
-    rec.addEventListener(ev, () => voiceDebug(`#${owner?.id ?? "?"} ${ev}`));
+    rec.addEventListener(ev, () => log(ev));
   }
-  rec.onresult = (e) => owner?.onResult(e);
-  rec.onerror = (e) => owner?.onError(e);
-  rec.onend = () => {
-    const ended = owner;
-    owner = null;
-    ended?.onEnd(); // may restart itself, making it the owner again
-    if (!owner && pending) {
-      const next = pending;
-      pending = null;
-      next.start();
-    }
-  };
-  shared = rec;
-  return rec;
-}
-
-/* Open the mic with getUserMedia before the recognizer starts, and keep it
-   open for the whole turn. On iOS, a recognizer started after an earlier
-   turn ended gets audiostart but no real capture (no orange mic dot, no
-   words) until the page reloads (issue #9); an explicit getUserMedia capture
-   is reported to bring the mic back. Returns null if it can't be opened —
-   the recognizer then runs as before. */
-async function openMic(log: (msg: string, isError?: boolean) => void) {
-  if (!navigator.mediaDevices?.getUserMedia) return null;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    for (const t of stream.getAudioTracks()) {
-      log(`mic open: muted=${t.muted} state=${t.readyState}`);
-      t.addEventListener("mute", () => log("mic track muted", true));
-      t.addEventListener("unmute", () => log("mic track unmuted"));
-      t.addEventListener("ended", () => log("mic track ended"));
-    }
-    return stream;
-  } catch (err) {
-    log(`mic open failed: ${err instanceof Error ? err.name : err}`, true);
-    return null;
-  }
-}
-
-async function startWebSpeech(
-  Recognition: SpeechRecognitionCtor,
-  h: Handlers,
-): Promise<VoiceSession> {
-  const rec = sharedRecognizer(Recognition);
-  const id = ++runCount;
-  // TODO: temporary — remove with voiceDebug.ts.
-  const log = (msg: string, isError = false) => voiceDebug(`#${id} ${msg}`, isError);
-
-  let mic: MediaStream | null = null;
-  const closeMic = () => {
-    if (!mic) return;
-    mic.getTracks().forEach((t) => t.stop());
-    mic = null;
-    log("mic closed");
-  };
+  rec.lang = navigator.language || "en-US";
+  rec.continuous = true;
+  rec.interimResults = true;
 
   // Text from earlier runs of `rec` (we restart it after browser-initiated ends).
   let committed = "";
@@ -172,85 +147,58 @@ async function startWebSpeech(
   let cancelled = false;
   let failed = false;
 
-  const run: Run = {
-    id,
-    start() {
-      if (cancelled) return;
-      owner = run;
-      rec.lang = navigator.language || "en-US";
-      log("start()");
-      try {
-        rec.start();
-      } catch (err) {
-        owner = null;
-        failed = true;
-        closeMic();
-        log(`start() threw: ${err instanceof Error ? err.message : err}`, true);
-        h.onError(new VoiceCaptureError("noisy", "speech recognition failed to start"));
-      }
-    },
-    onResult(e) {
-      current = mergeResults(e.results);
-      log(`result: ${current}`);
-      h.onPartial?.(joinText(committed, current));
-    },
-    onError(e) {
-      log(`error: ${e.error}`, true);
-      // "no-speech" just means silence; let onend resolve with an empty transcript.
-      if (e.error === "no-speech" || e.error === "aborted") return;
-      failed = true;
-      if (!cancelled)
-        h.onError(
-          new VoiceCaptureError(failureFor(e.error), `speech recognition: ${e.error}`),
-        );
-    },
-    onEnd() {
-      log(`end (stopped=${stopped} cancelled=${cancelled} failed=${failed})`);
-      if (cancelled || failed) return closeMic();
-      // Browsers end continuous sessions on their own after a pause; keep
-      // listening until the user taps Done.
-      if (!stopped) {
-        committed = joinText(committed, current);
-        current = "";
-        log("restart");
-        run.start();
-        return;
-      }
-      closeMic();
-      h.onFinal(joinText(committed, current));
-    },
+  rec.onresult = (e) => {
+    current = mergeResults(e.results);
+    log(`result: ${current}`);
+    h.onPartial?.(joinText(committed, current));
   };
 
-  log("opening mic");
-  mic = await openMic(log);
+  rec.onerror = (e) => {
+    log(`error: ${e.error}`, true);
+    // "no-speech" just means silence; let onend resolve with an empty transcript.
+    if (e.error === "no-speech" || e.error === "aborted") return;
+    failed = true;
+    if (!cancelled)
+      h.onError(
+        new VoiceCaptureError(failureFor(e.error), `speech recognition: ${e.error}`),
+      );
+  };
 
-  // The previous turn is still winding down (its `end` hasn't fired yet):
-  // start right after it. Otherwise start now.
-  if (owner) {
-    log("waiting for previous turn to end");
-    pending = run;
-  } else {
-    run.start();
+  rec.onend = () => {
+    log(`end (stopped=${stopped} cancelled=${cancelled} failed=${failed})`);
+    if (cancelled || failed) return release();
+    // Browsers end continuous sessions on their own after a pause; keep
+    // listening until the user taps Done.
+    if (!stopped) {
+      committed = joinText(committed, current);
+      current = "";
+      log("restart");
+      rec.start();
+      return;
+    }
+    release();
+    h.onFinal(joinText(committed, current));
+  };
+
+  log("start()");
+  try {
+    rec.start();
+  } catch (err) {
+    release();
+    log(`start() threw: ${err instanceof Error ? err.message : err}`, true);
+    throw new VoiceCaptureError("noisy", "speech recognition failed to start");
   }
 
   return {
     stop() {
       if (stopped) return;
       stopped = true;
-      if (pending === run) {
-        pending = null;
-        closeMic();
-        h.onFinal("");
-        return;
-      }
       log("stop()");
-      if (owner === run) rec.stop();
+      rec.stop();
     },
     cancel() {
       if (cancelled) return;
       cancelled = true;
-      if (pending === run) pending = null;
-      if (owner !== run) return closeMic();
       log("cancel() → stop()");
       // stop(), not abort(): it ends the turn the same way "That's everything"
       // does, and `cancelled` drops the transcript.

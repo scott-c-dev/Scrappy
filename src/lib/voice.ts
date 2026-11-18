@@ -124,14 +124,45 @@ function sharedRecognizer(Recognition: SpeechRecognitionCtor): SpeechRecognition
   return rec;
 }
 
-function startWebSpeech(
+/* Open the mic with getUserMedia before the recognizer starts, and keep it
+   open for the whole turn. On iOS, a recognizer started after an earlier
+   turn ended gets audiostart but no real capture (no orange mic dot, no
+   words) until the page reloads (issue #9); an explicit getUserMedia capture
+   is reported to bring the mic back. Returns null if it can't be opened —
+   the recognizer then runs as before. */
+async function openMic(log: (msg: string, isError?: boolean) => void) {
+  if (!navigator.mediaDevices?.getUserMedia) return null;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    for (const t of stream.getAudioTracks()) {
+      log(`mic open: muted=${t.muted} state=${t.readyState}`);
+      t.addEventListener("mute", () => log("mic track muted", true));
+      t.addEventListener("unmute", () => log("mic track unmuted"));
+      t.addEventListener("ended", () => log("mic track ended"));
+    }
+    return stream;
+  } catch (err) {
+    log(`mic open failed: ${err instanceof Error ? err.name : err}`, true);
+    return null;
+  }
+}
+
+async function startWebSpeech(
   Recognition: SpeechRecognitionCtor,
   h: Handlers,
-): VoiceSession {
+): Promise<VoiceSession> {
   const rec = sharedRecognizer(Recognition);
   const id = ++runCount;
   // TODO: temporary — remove with voiceDebug.ts.
   const log = (msg: string, isError = false) => voiceDebug(`#${id} ${msg}`, isError);
+
+  let mic: MediaStream | null = null;
+  const closeMic = () => {
+    if (!mic) return;
+    mic.getTracks().forEach((t) => t.stop());
+    mic = null;
+    log("mic closed");
+  };
 
   // Text from earlier runs of `rec` (we restart it after browser-initiated ends).
   let committed = "";
@@ -153,6 +184,7 @@ function startWebSpeech(
       } catch (err) {
         owner = null;
         failed = true;
+        closeMic();
         log(`start() threw: ${err instanceof Error ? err.message : err}`, true);
         h.onError(new VoiceCaptureError("noisy", "speech recognition failed to start"));
       }
@@ -174,7 +206,7 @@ function startWebSpeech(
     },
     onEnd() {
       log(`end (stopped=${stopped} cancelled=${cancelled} failed=${failed})`);
-      if (cancelled || failed) return;
+      if (cancelled || failed) return closeMic();
       // Browsers end continuous sessions on their own after a pause; keep
       // listening until the user taps Done.
       if (!stopped) {
@@ -184,12 +216,16 @@ function startWebSpeech(
         run.start();
         return;
       }
+      closeMic();
       h.onFinal(joinText(committed, current));
     },
   };
 
+  log("opening mic");
+  mic = await openMic(log);
+
   // The previous turn is still winding down (its `end` hasn't fired yet):
-  // start right after it. Otherwise start now, inside the user's tap.
+  // start right after it. Otherwise start now.
   if (owner) {
     log("waiting for previous turn to end");
     pending = run;
@@ -203,6 +239,7 @@ function startWebSpeech(
       stopped = true;
       if (pending === run) {
         pending = null;
+        closeMic();
         h.onFinal("");
         return;
       }
@@ -213,7 +250,7 @@ function startWebSpeech(
       if (cancelled) return;
       cancelled = true;
       if (pending === run) pending = null;
-      if (owner !== run) return;
+      if (owner !== run) return closeMic();
       log("cancel() → stop()");
       // stop(), not abort(): it ends the turn the same way "That's everything"
       // does, and `cancelled` drops the transcript.
